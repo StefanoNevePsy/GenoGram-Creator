@@ -1,0 +1,67 @@
+﻿
+App.tsx:788:  return <g className="group hover:opacity-80 
+cursor-pointer" onClick={onSelect}><path d={pathD} 
+stroke="transparent" strokeWidth={20} fill="none" /><path 
+d={pathD} stroke={stroke} strokeWidth={isSelected ? 3 : 2} 
+strokeDasharray={strokeDash} fill="none" /><Decorator 
+/>{edge.label && <text x={midX} y={midY-15} textAnchor="middle" 
+fill={stroke} className="text-[10px] bg-white dark:bg-gray-800 
+px-1">{edge.label}</text>}{isSelected && isStructural && (<g 
+transform={`translate(${midX}, ${marriageBarY})`} 
+onMouseDown={onAddChildH} onTouchStart={onAddChildH}><circle 
+r={12} fill="#10b981" stroke="white"/><Plus size={12} x={-6} 
+y={-6} stroke="white" strokeWidth={3}/><title>Aggiungi Figlio alla 
+Coppia</title></g>)}</g>;
+App.tsx:956:           <g transform={`translate(${w+20}, ${r})`} 
+onMouseDown={(e)=>onH(e,'spouse')} 
+onTouchStart={(e)=>onH(e,'spouse')} className="cursor-crosshair 
+hover:opacity-80">
+App.tsx:961:           <g transform={`translate(${r}, ${h+25})`} 
+onMouseDown={(e)=>onH(e,'child')} 
+onTouchStart={(e)=>onH(e,'child')} className="cursor-crosshair 
+hover:opacity-80">
+App.tsx:966:           <g transform={`translate(${r}, -25)`} 
+onMouseDown={(e)=>onH(e,'parents')} 
+onTouchStart={(e)=>onH(e,'parents')} className="cursor-crosshair 
+hover:opacity-80">
+App.tsx:971:           <g transform={`translate(-20, ${r})`} 
+onMouseDown={(e)=>onH(e,'link')} onTouchStart={(e)=>onH(e,'link')} 
+className="cursor-alias hover:opacity-80">
+App.tsx:1825:                onMouseDown={onMove}
+App.tsx:1826:                onTouchStart={onMove}
+App.tsx:1830:            <g transform={`translate(${x + w/2}, 
+${y})`} className="cursor-grab active:cursor-grabbing" 
+onMouseDown={(e) => onHandleDown(e, 'rotate')} onTouchStart={(e) 
+=> onHandleDown(e, 'rotate')}>
+App.tsx:1836:            <g transform={`translate(${x + w}, ${y + 
+h})`} className="cursor-nwse-resize" onMouseDown={(e) => 
+onHandleDown(e, 'scale')} onTouchStart={(e) => onHandleDown(e, 
+'scale')}>
+App.tsx:1920:        onPointerDown={(e) => e.stopPropagation()} 
+App.tsx:2060:const StickyNoteShape = ({ note, isSelected, 
+onPointerDown, onUpdate }: { note: StickyNoteData, isSelected: 
+boolean, onPointerDown: (e: React.PointerEvent) => void, onUpdate: 
+(n: StickyNoteData) => void }) => {
+App.tsx:2114:            onPointerDown={(e) => startResize(e, 
+handle)} // Ura PointerDown
+App.tsx:2126:            onPointerDown={onPointerDown} 
+App.tsx:4505:    onPointerDown={handleCanvasDown}
+App.tsx:4508:    onTouchStart={handleTouchStart} 
+App.tsx:4540:                                        
+onMouseDown={(e)=>{ e.stopPropagation(); 
+setSelectedGroupIds([g.id]); setSelectedNodeIds([]); }}
+App.tsx:4546:                                            
+onMouseDown={(e) => {
+App.tsx:4635:           // CAMBIATO DA onMouseDown/TouchStart A 
+onPointerDown
+App.tsx:4636:           onPointerDown={(e) => handleNodeDown(e, 
+n.id)}
+App.tsx:4676:                                            
+onMouseDown={(e)=>{
+App.tsx:4689:                                            
+onMouseDown={(e)=>{
+App.tsx:4712:        // CAMBIATO DA onMouseDown A onPointerDown
+App.tsx:4713:        onPointerDown={(e) => handleNoteDown(e, 
+note.id)} 
+
+
