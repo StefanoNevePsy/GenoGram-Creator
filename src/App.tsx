@@ -94,7 +94,7 @@ const BASE_REL_CONFIG: Record<string, RelationshipConfig> = {
     'manipulative': { label: 'Manipolativo', color: '#FF0000', lineStyle: 'solid', renderType: 'arrow-x-center' },
     'controlling': { label: 'Controllante', color: '#800080', lineStyle: 'solid', renderType: 'arrow-box-center' },
     'keeper': { label: 'Custode/Caregiver', color: '#008080', lineStyle: 'solid', renderType: 'arrow-diamond-center' },
-    'neglect': { label: 'Trascuratezza', color: '#808080', lineStyle: 'dashed', renderType: 'standard' },
+    'neglect': { label: 'Trascuratezza', color: '#808080', lineStyle: 'dashed', renderType: 'double-arrow-inward' },
 
     'custom': { label: 'Personalizzata', color: '#000000', lineStyle: 'solid', renderType: 'standard' }
 };
@@ -228,6 +228,7 @@ const PRESET_THEMES: AppTheme[] = [
 
 
 const GRID_SIZE = 20;
+const SNAP_SIZE = 40; // Snap increment: matches NODE_WIDTH for easy alignment
 const CANVAS_SIZE = 8000;
 const CENTER_POS = CANVAS_SIZE / 2;
 
@@ -681,7 +682,7 @@ const LinePreview = ({ type, width = 50, darkMode = false, transparent = false }
     const midX = width / 2;
     const midY = 7;
 
-    const hasEndArrow = (config.renderType.includes('arrow') && !config.renderType.includes('center')) || config.renderType === 'triple-zigzag-center-arrow';
+    const hasEndArrow = (config.renderType.includes('arrow') && !config.renderType.includes('center') && config.renderType !== 'double-arrow-inward') || config.renderType === 'triple-zigzag-center-arrow';
     let arrowOffset = 6;
     if (config.renderType === 'arrow-thick') arrowOffset = 8;
     if (hasEndArrow) actualEndX -= arrowOffset;
@@ -724,6 +725,13 @@ const LinePreview = ({ type, width = 50, darkMode = false, transparent = false }
         if (config.renderType === 'triangle-up-center') return <polygon points="-5,0 5,0 0,-8" fill={stroke} transform={centerArrowTrans} />;
 
         if (config.renderType === 'arrow-thick') return <polygon points="-6,-6 4,0 -6,6" fill={stroke} transform={arrowTrans} />;
+        if (config.renderType === 'double-arrow-inward') {
+            const x1 = actualEndX * 0.3; const x2 = actualEndX * 0.7;
+            return <g>
+                <polygon points="4,-4 -4,0 4,4" fill={stroke} transform={`translate(${x1}, ${midY})`} />
+                <polygon points="-4,-4 4,0 -4,4" fill={stroke} transform={`translate(${x2}, ${midY})`} />
+            </g>;
+        }
         if (config.renderType.includes('arrow') && !config.renderType.includes('center')) return <g><polygon points="-5,-4 5,0 -5,4" fill={stroke} transform={arrowTrans} /></g>;
 
         if (config.renderType === 'arrow-x-center') return <g><polygon points="-5,-4 5,0 -5,4" fill={stroke} transform={arrowTrans} /><g transform={centerArrowTrans}><line x1="-4" y1="-4" x2="4" y2="4" stroke={stroke} strokeWidth={2} /><line x1="-4" y1="4" x2="4" y2="-4" stroke={stroke} strokeWidth={2} /></g></g>;
@@ -828,7 +836,7 @@ const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customConfig, 
     let actualEndX = end.x;
     let actualEndY = end.y;
 
-    const hasEndArrow = (renderType.includes('arrow') && !renderType.includes('center')) || renderType === 'triple-zigzag-center-arrow';
+    const hasEndArrow = (renderType.includes('arrow') && !renderType.includes('center') && renderType !== 'double-arrow-inward') || renderType === 'triple-zigzag-center-arrow';
     if (hasEndArrow && !isStructural) {
         const baseOffset = arrowOffset + 4; // Use slightly smaller offset to avoid gap
         const rad = Math.atan2(end.y - start.y, end.x - start.x);
@@ -887,6 +895,19 @@ const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customConfig, 
         if (renderType === 'triple-zigzag-center') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(6,6)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-6,-6)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY, 4, 12)} stroke="red" strokeWidth={1.5} fill="none" /></g>;
 
         if (renderType === 'triangle-up-center') return <polygon points="-6,0 6,0 0,-10" fill={stroke} transform={`translate(${midX},${midY})`} />;
+
+        if (renderType === 'double-arrow-inward') {
+            const dx = actualEndX - start.x; const dy = actualEndY - start.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const ux = len > 0 ? dx / len : 1; const uy = len > 0 ? dy / len : 0;
+            const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+            const x1 = start.x + dx * 0.33; const y1 = start.y + dy * 0.33;
+            const x2 = start.x + dx * 0.67; const y2 = start.y + dy * 0.67;
+            return <g>
+                <polygon points="6,-6 -6,0 6,6" fill={stroke} transform={`translate(${x1},${y1}) rotate(${ang})`} />
+                <polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={`translate(${x2},${y2}) rotate(${ang})`} />
+            </g>;
+        }
 
         if (renderType === 'arrow-x-center') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /><g transform={centerArrowTrans}><line x1="-6" y1="-6" x2="6" y2="6" stroke={stroke} strokeWidth={2} /><line x1="-6" y1="6" x2="6" y2="-6" stroke={stroke} strokeWidth={2} /></g></g>;
         if (renderType === 'arrow-box-center') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /><rect x="-6" y="-6" width="12" height="12" stroke={stroke} strokeWidth={2} fill="white" transform={centerArrowTrans} /></g>;
@@ -2594,8 +2615,8 @@ export default function GenogramApp() {
 
             if (snapToGrid) {
                 return {
-                    x: Math.round(globalPoint.x / GRID_SIZE) * GRID_SIZE,
-                    y: Math.round(globalPoint.y / GRID_SIZE) * GRID_SIZE
+                    x: Math.round(globalPoint.x / SNAP_SIZE) * SNAP_SIZE,
+                    y: Math.round(globalPoint.y / SNAP_SIZE) * SNAP_SIZE
                 };
             }
             return { x: globalPoint.x, y: globalPoint.y };
@@ -3073,8 +3094,8 @@ export default function GenogramApp() {
 
             const idx = sortedSelection.findIndex(s => s.id === n.id);
 
-            if (type === 'h') return { ...n, y: Math.round(avgY / 20) * 20 };
-            if (type === 'v') return { ...n, x: Math.round(avgX / 20) * 20 };
+            if (type === 'h') return { ...n, y: Math.round(avgY / SNAP_SIZE) * SNAP_SIZE };
+            if (type === 'v') return { ...n, x: Math.round(avgX / SNAP_SIZE) * SNAP_SIZE };
 
             // Disposizione a Cerchio (FIX ROTAZIONE)
             if (type === 'circle') {
@@ -3090,8 +3111,8 @@ export default function GenogramApp() {
 
                 return {
                     ...n,
-                    x: Math.round((avgX + radius * Math.cos(angle)) / 20) * 20,
-                    y: Math.round((avgY + radius * Math.sin(angle)) / 20) * 20
+                    x: Math.round((avgX + radius * Math.cos(angle)) / SNAP_SIZE) * SNAP_SIZE,
+                    y: Math.round((avgY + radius * Math.sin(angle)) / SNAP_SIZE) * SNAP_SIZE
                 };
             }
 
@@ -3103,12 +3124,12 @@ export default function GenogramApp() {
                 const gridH = (Math.ceil(selected.length / cols) - 1) * 120;
                 const startX = avgX - gridW / 2;
                 const startY = avgY - gridH / 2;
-                return { ...n, x: Math.round((startX + col * 120) / 20) * 20, y: Math.round((startY + row * 120) / 20) * 20 };
+                return { ...n, x: Math.round((startX + col * 120) / SNAP_SIZE) * SNAP_SIZE, y: Math.round((startY + row * 120) / SNAP_SIZE) * SNAP_SIZE };
             }
 
             if (type === 'diagonal') {
                 const offset = (idx - (selected.length - 1) / 2) * 80;
-                return { ...n, x: Math.round((avgX + offset) / 20) * 20, y: Math.round((avgY + offset) / 20) * 20 };
+                return { ...n, x: Math.round((avgX + offset) / SNAP_SIZE) * SNAP_SIZE, y: Math.round((avgY + offset) / SNAP_SIZE) * SNAP_SIZE };
             }
             return n;
         }));
@@ -3567,7 +3588,13 @@ export default function GenogramApp() {
                 setNodes(prevNodes => prevNodes.map(node => {
                     if (selectedNodeIds.includes(node.id)) {
                         const initial = dragRef.current.initialNodePositions?.[node.id] || { x: node.x, y: node.y };
-                        return { ...node, x: initial.x + dx, y: initial.y + dy };
+                        let nx = initial.x + dx;
+                        let ny = initial.y + dy;
+                        if (snapToGrid) {
+                            nx = Math.round(nx / SNAP_SIZE) * SNAP_SIZE;
+                            ny = Math.round(ny / SNAP_SIZE) * SNAP_SIZE;
+                        }
+                        return { ...node, x: nx, y: ny };
                     }
                     return node;
                 }));
@@ -3695,11 +3722,15 @@ export default function GenogramApp() {
                     let dropX = currX - 30;
                     let dropY = currY - 30;
 
-                    if (isClick && type === 'parents') {
+                    // Parents handle: always create father + mother pair (click or drag)
+                    if (type === 'parents') {
                         const srcId = sourceId;
                         const fId = generateId(); const mId = generateId();
-                        const f = { id: fId, x: srcNode.x - 80, y: srcNode.y - 120, gender: 'M', name: 'Padre', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
-                        const m = { id: mId, x: srcNode.x + 80, y: srcNode.y - 120, gender: 'F', name: 'Madre', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
+                        // If click, use default position above source node; if drag, center parents around drop position
+                        const parentY = isClick ? srcNode.y - 120 : currY - 20;
+                        const parentCenterX = isClick ? srcNode.x : currX - 20;
+                        const f = { id: fId, x: parentCenterX - 80, y: parentY, gender: 'M', name: 'Padre', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
+                        const m = { id: mId, x: parentCenterX + 80, y: parentY, gender: 'F', name: 'Madre', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
                         const newEs = [{ id: generateId(), fromId: fId, toId: mId, type: 'marriage', label: '', notes: [] }, { id: generateId(), fromId: fId, toId: srcId, type: 'child-bio', label: '', notes: [] }, { id: generateId(), fromId: mId, toId: srcId, type: 'child-bio', label: '', notes: [] }];
 
                         const newNodes = [...nodesRef.current, f as GenNode, m as GenNode];
@@ -3916,8 +3947,8 @@ export default function GenogramApp() {
     const addNodeAtPos = (gender: Gender, x: number, y: number) => {
         // Snap to grid se attivo
         if (snapToGrid) {
-            x = Math.round(x / GRID_SIZE) * GRID_SIZE;
-            y = Math.round(y / GRID_SIZE) * GRID_SIZE;
+            x = Math.round(x / SNAP_SIZE) * SNAP_SIZE;
+            y = Math.round(y / SNAP_SIZE) * SNAP_SIZE;
         }
         const n = { id: generateId(), x, y, gender, name: 'Nuovo', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
         updateNodes(prev => [...prev, n]);
@@ -4185,9 +4216,9 @@ export default function GenogramApp() {
         const centerShift = CENTER_POS - (minX + maxX) / 2;
 
         scopeNodes.forEach(n => {
-            n.x = Math.round((n.x + centerShift) / 20) * 20;
+            n.x = Math.round((n.x + centerShift) / SNAP_SIZE) * SNAP_SIZE;
             const lvl = levels.get(n.id) || 0;
-            n.y = Math.round((CENTER_POS + lvl * LEVEL_H) / 20) * 20;
+            n.y = Math.round((CENTER_POS + lvl * LEVEL_H) / SNAP_SIZE) * SNAP_SIZE;
         });
 
         updateNodes(allNodes);
@@ -4518,7 +4549,7 @@ export default function GenogramApp() {
                 let midX = 15;
                 let midY = 7;
 
-                const hasEndArrow = (config.renderType.includes('arrow') && !config.renderType.includes('center')) || config.renderType === 'triple-zigzag-center-arrow';
+                const hasEndArrow = (config.renderType.includes('arrow') && !config.renderType.includes('center') && config.renderType !== 'double-arrow-inward') || config.renderType === 'triple-zigzag-center-arrow';
                 if (hasEndArrow) actualEndX -= 6;
 
                 let pathD = `M 0 7 L ${actualEndX} 7`;
@@ -4535,7 +4566,11 @@ export default function GenogramApp() {
                 if (config.renderType === 'fusion' || config.renderType === 'triple') baseHtml += `<g><path d="${pathD}" stroke="${color}" stroke-width="1" transform="translate(0, 3)" fill="none"/><path d="${pathD}" stroke="${color}" stroke-width="1" transform="translate(0, -3)" fill="none"/></g>`;
                 if (config.renderType === 'double' || config.renderType === 'double-zigzag' || config.renderType === 'best-friend') baseHtml += `<path d="${pathD}" stroke="${color}" stroke-width="1" transform="translate(0, 3)" fill="none" ${strokeDash}/>`;
 
-                if (hasEndArrow) {
+                if (config.renderType === 'double-arrow-inward') {
+                    const x1 = actualEndX * 0.3; const x2 = actualEndX * 0.7;
+                    baseHtml += `<polygon points="4,-4 -4,0 4,4" fill="${color}" transform="translate(${x1}, 7)" />`;
+                    baseHtml += `<polygon points="-4,-4 4,0 -4,4" fill="${color}" transform="translate(${x2}, 7)" />`;
+                } else if (hasEndArrow) {
                     baseHtml += `<polygon points="-5,-4 5,0 -5,4" fill="${color}" transform="translate(${actualEndX}, 7)" />`;
                 }
 
@@ -4961,6 +4996,8 @@ export default function GenogramApp() {
                     <div style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }} className="relative print:w-full print:h-full">
                         {/* Background Grid */}
                         <div className="absolute inset-0 opacity-10 pointer-events-none print:hidden" style={{ backgroundImage: `radial-gradient(currentColor 1px, transparent 1px)`, backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`, color: 'var(--theme-text-muted)' }} />
+                        {/* Snap Grid overlay: stronger dots at SNAP_SIZE intervals */}
+                        {snapToGrid && <div className="absolute inset-0 opacity-20 pointer-events-none print:hidden" style={{ backgroundImage: `radial-gradient(currentColor 1.5px, transparent 1.5px)`, backgroundSize: `${SNAP_SIZE}px ${SNAP_SIZE}px`, color: 'var(--theme-text-muted)' }} />}
 
                         <svg
                             ref={svgRef}
@@ -5095,7 +5132,7 @@ export default function GenogramApp() {
                                     const init = dragRef.current?.initialNodePositions?.[nid]; if (!init) return null;
                                     const dx = dragState.currX - dragState.startX; const dy = dragState.currY - dragState.startY;
                                     let nx = init.x + dx; let ny = init.y + dy;
-                                    if (snapToGrid) { nx = Math.round(nx / GRID_SIZE) * GRID_SIZE; ny = Math.round(ny / GRID_SIZE) * GRID_SIZE; }
+                                    if (snapToGrid) { nx = Math.round(nx / SNAP_SIZE) * SNAP_SIZE; ny = Math.round(ny / SNAP_SIZE) * SNAP_SIZE; }
                                     return <rect key={nid} x={nx} y={ny} width={NODE_WIDTH} height={NODE_HEIGHT} fill="none" stroke="gray" strokeDasharray="2,2" />
                                 })}
 

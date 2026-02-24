@@ -72,7 +72,7 @@ export const BASE_REL_CONFIG: Record<string, RelationshipConfig> = {
     'abuse-physical': { label: 'Abuso Fisico', color: '#800000', lineStyle: 'solid', renderType: 'arrow-thick' }, 
     'abuse-emotional': { label: 'Abuso Emotivo', color: '#800000', lineStyle: 'dashed', renderType: 'arrow' },
     'abuse-sexual': { label: 'Abuso Sessuale', color: '#FF0080', lineStyle: 'solid', renderType: 'arrow-double-bar-center' }, 
-    'neglect': { label: 'Trascuratezza', color: '#808080', lineStyle: 'dashed', renderType: 'standard' },
+    'neglect': { label: 'Trascuratezza', color: '#808080', lineStyle: 'dashed', renderType: 'double-arrow-inward' },
     
     // 6. CONTROLLO
     'focused': { label: 'Focalizzata Su', color: '#0000FF', lineStyle: 'solid', renderType: 'arrow-open' }, 
