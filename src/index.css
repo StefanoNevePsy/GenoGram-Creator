@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Stili globali per il corpo e la stampa */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  overflow: hidden;
+  background-color: #f3f4f6; /* bg-gray-100 */
+}
+
+/* Fix per la modalità scura */
+.dark body {
+  background-color: #030712; /* bg-gray-950 */
+}
+
+@media print {
+  @page {
+    margin: 0;
+    size: landscape;
+  }
+  body {
+    background: white;
+  }
+}
