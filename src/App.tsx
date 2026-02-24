@@ -7,7 +7,7 @@ import {
     AlignJustify, CircleDashed, Upload, FileText, Search, RotateCcw, RotateCw,
     Home, GraduationCap, BookOpen, User, Filter, SortAsc, Tag, Folder, Briefcase, HelpCircle,
     Target, Grid3X3, TrendingUp, Image as ImageIcon, FileImage, Calendar, Check, Info,
-    Cloud, CloudOff, RefreshCw, CheckCircle2, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, Type, StickyNote, Database // <--- Network aggiunto qui
+    Cloud, CloudOff, RefreshCw, CheckCircle2, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, Type, StickyNote, Database, Maximize, Minimize // <--- Network aggiunto qui
 } from 'lucide-react';
 import { StatusBar } from '@capacitor/status-bar';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -2518,41 +2518,38 @@ export default function GenogramApp() {
     };
 
     // --- AUTO FULLSCREEN PER ANDROID/CAPACITOR ---
+    // --- FULLSCREEN TOGGLE (manuale, non automatico) ---
+    const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+
     useEffect(() => {
-        // Funzione per richiedere il fullscreen in modo non invasivo
-        const requestFullScreen = async () => {
-            if (!document.fullscreenElement) {
-                try {
-                    // Tenta le varie API dei browser/webview
-                    if (document.documentElement.requestFullscreen) {
-                        await document.documentElement.requestFullscreen();
-                    } else if ((document.documentElement as any).webkitRequestFullscreen) {
-                        await (document.documentElement as any).webkitRequestFullscreen();
-                    }
-                } catch (e) {
-                    // Ignora errori se l'utente non ha interagito o il browser blocca
-                    console.log("Fullscreen request blocked/ignored", e);
-                }
-            }
-        };
-
-        // Su mobile spesso serve un'interazione utente, ma Capacitor potrebbe permetterlo al mount
-        requestFullScreen();
-
-        // Listener aggiuntivo al primo tocco per garantire il fullscreen
-        const onFirstInteraction = () => {
-            requestFullScreen();
-            window.removeEventListener('touchstart', onFirstInteraction);
-            window.removeEventListener('mousedown', onFirstInteraction);
-        };
-        window.addEventListener('touchstart', onFirstInteraction);
-        window.addEventListener('mousedown', onFirstInteraction);
-
+        const onFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
+        document.addEventListener('fullscreenchange', onFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', onFullscreenChange);
         return () => {
-            window.removeEventListener('touchstart', onFirstInteraction);
-            window.removeEventListener('mousedown', onFirstInteraction);
+            document.removeEventListener('fullscreenchange', onFullscreenChange);
+            document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
         };
     }, []);
+
+    const toggleFullscreen = async () => {
+        try {
+            if (!document.fullscreenElement) {
+                if (document.documentElement.requestFullscreen) {
+                    await document.documentElement.requestFullscreen();
+                } else if ((document.documentElement as any).webkitRequestFullscreen) {
+                    await (document.documentElement as any).webkitRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    await document.exitFullscreen();
+                } else if ((document as any).webkitExitFullscreen) {
+                    await (document as any).webkitExitFullscreen();
+                }
+            }
+        } catch (e) {
+            console.log("Fullscreen toggle failed:", e);
+        }
+    };
 
     useEffect(() => {
         const hideBar = async () => {
@@ -3584,10 +3581,13 @@ export default function GenogramApp() {
             else if (dragRef.current.type === 'move') {
                 const dx = (x - startX);
                 const dy = (y - startY);
+                // Cattura initialNodePositions PRIMA del callback per evitare race condition
+                // con onPointerUp che resetta dragRef.current
+                const savedPositions = dragRef.current.initialNodePositions;
 
                 setNodes(prevNodes => prevNodes.map(node => {
                     if (selectedNodeIds.includes(node.id)) {
-                        const initial = dragRef.current.initialNodePositions?.[node.id] || { x: node.x, y: node.y };
+                        const initial = savedPositions?.[node.id] || { x: node.x, y: node.y };
                         let nx = initial.x + dx;
                         let ny = initial.y + dy;
                         if (snapToGrid) {
@@ -3604,11 +3604,17 @@ export default function GenogramApp() {
             else if (dragRef.current.type === 'move-note') {
                 const dx = (x - startX);
                 const dy = (y - startY);
+                // Cattura initialNodePositions PRIMA del callback per evitare race condition
+                // con onPointerUp che resetta dragRef.current
+                const savedPositions = dragRef.current.initialNodePositions;
 
                 setStickyNotes(prev => prev.map(note => {
                     if (selectedNoteIds.includes(note.id)) {
-                        const initial = dragRef.current.initialNodePositions?.[note.id] || { x: note.x, y: note.y };
-                        return { ...note, x: initial.x + dx, y: initial.y + dy };
+                        const initial = savedPositions?.[note.id] || { x: note.x, y: note.y };
+                        // Clamp posizione entro i limiti della canvas
+                        const nx = Math.max(0, Math.min(CANVAS_SIZE - note.width, initial.x + dx));
+                        const ny = Math.max(0, Math.min(CANVAS_SIZE - note.height, initial.y + dy));
+                        return { ...note, x: nx, y: ny };
                     }
                     return note;
                 }));
@@ -4725,6 +4731,9 @@ export default function GenogramApp() {
                                     <button onClick={() => setSortBy('name_asc')} className={`p-1.5 rounded ${sortBy === 'name_asc' ? 'bg-black/10 dark:bg-white/10 text-[var(--theme-accent)]' : 'theme-hover'}`} title="Alfabetico"><Filter size={18} /></button>
                                 </div>
                             </div>
+                            <button onClick={toggleFullscreen} className="p-2 rounded-lg theme-hover transition-colors" title={isFullscreen ? "Esci da Schermo Intero" : "Schermo Intero"}>
+                                {isFullscreen ? <Minimize size={18} className="theme-text" /> : <Maximize size={18} className="theme-text" />}
+                            </button>
                         </div>
 
                         {/* Grid */}
