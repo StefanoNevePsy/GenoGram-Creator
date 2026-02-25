@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Genogram Builder</string>
+    <string name="title_activity_main">Genogram Builder</string>
+    <string name="package_name">com.genogrambuilder.stefanoneve</string>
+    <string name="custom_url_scheme">com.genogrambuilder.stefanoneve</string>
+</resources>
