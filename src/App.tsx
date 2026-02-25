@@ -2929,49 +2929,64 @@ export default function GenogramApp() {
     }, [goBack]);
 
 
-    // 2. AUTOSAVE INTELLIGENTE
+    // 2. AUTOSAVE INTELLIGENTE (Unico effect unificato: localStorage + Firebase)
     useEffect(() => {
-        if (view !== 'editor') return;
+        if (view !== 'editor' || !currentGenId) return;
 
-        // Se manca auth o db, siamo OFFLINE
-        if (!user || !db || !currentGenId) {
-            setSyncStatus('offline');
-            return;
-        }
+        // Non salvare grafi vuoti al primo avvio
+        if (nodes.length === 0 && edges.length === 0 && historyIndex <= 0) return;
 
+        // Se è un aggiornamento remoto, non ri-salvare (evita loop)
         if (isRemoteUpdate.current) {
             isRemoteUpdate.current = false;
             return;
         }
 
-        const pathPart = customUser ? customUser : user.uid;
-        // Se non c'è un percorso valido, errore
-        if (!pathPart) { setSyncStatus('error'); return; }
+        const timer = setTimeout(async () => {
+            const dataToSave = {
+                id: currentGenId,
+                title: metaTitle,
+                category: metaCategory,
+                lastModified: Date.now(),
+                data: { nodes, edges, groups, presets: customPresets, stickyNotes }
+            };
 
-        setSyncStatus('syncing');
+            // 1. Salva draft locale (persistenza offline)
+            localStorage.setItem(`genopro_data_${currentGenId}`, JSON.stringify(dataToSave));
 
-        const saveData = async () => {
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'users', pathPart, 'genograms', currentGenId);
-                await setDoc(docRef, {
-                    id: currentGenId,
-                    title: metaTitle,
-                    category: metaCategory,
-                    lastModified: Date.now(),
-                    data: { nodes, edges, groups, presets: customPresets, stickyNotes }
-                }, { merge: true });
-
-                setSyncStatus('synced');
-            } catch (err) {
-                console.error("Errore Salvataggio:", err);
-                setSyncStatus('error');
+            // 2. Aggiorna indice locale (per la dashboard offline)
+            const localIndexStr = localStorage.getItem('genopro_local_index');
+            let localList: GenogramMeta[] = localIndexStr ? JSON.parse(localIndexStr) : [];
+            const existingIdx = localList.findIndex((x) => x.id === currentGenId);
+            if (existingIdx >= 0) {
+                localList[existingIdx] = dataToSave;
+            } else {
+                localList.push(dataToSave);
             }
-        };
+            localStorage.setItem('genopro_local_index', JSON.stringify(localList));
 
-        const timeoutId = setTimeout(saveData, 1500);
-        return () => clearTimeout(timeoutId);
+            // 3. Salva su Firebase se online
+            if (user && db) {
+                const pathPart = customUser ? customUser : user.uid;
+                if (!pathPart) { setSyncStatus('error'); return; }
 
-    }, [nodes, edges, groups, metaTitle, metaCategory, customPresets, customUser, user, db, view, currentGenId]);
+                setSyncStatus('syncing');
+                try {
+                    const docRef = doc(db, 'artifacts', appId, 'users', pathPart, 'genograms', currentGenId);
+                    await setDoc(docRef, dataToSave, { merge: true });
+                    setSyncStatus('synced');
+                } catch (err) {
+                    console.error("Errore Salvataggio:", err);
+                    setSyncStatus('error');
+                }
+            } else {
+                setSyncStatus('offline');
+            }
+        }, 1500);
+
+        return () => clearTimeout(timer);
+
+    }, [nodes, edges, groups, stickyNotes, metaTitle, metaCategory, customPresets, customUser, user, db, view, currentGenId]);
 
     // Shortcut "i" per legenda
     useEffect(() => {
@@ -3254,6 +3269,11 @@ export default function GenogramApp() {
             // NUOVA SHORTCUT: N per Sticky Note
             if (e.key.toLowerCase() === 'n' && !e.altKey && !e.ctrlKey) {
                 addStickyNoteAtCursor();
+            }
+
+            // SHORTCUT: G per Snap to Grid
+            if (e.key.toLowerCase() === 'g' && !e.altKey && !e.ctrlKey && selectedNodeIds.length === 0) {
+                setSnapToGrid(prev => !prev);
             }
 
             // RELAZIONI RAPIDE (S/C/P)
@@ -3874,51 +3894,6 @@ export default function GenogramApp() {
         }
     }, [user, db, customUser]);
 
-    // Auto-Save Effect Multi-Platform (Sostituisce HandleSave Base)
-    useEffect(() => {
-        if (!currentGenId) return;
-
-        // Non avviamo il salvataggio al primo avvio se il grafico è vuoto
-        if (nodes.length === 0 && edges.length === 0 && historyIndex <= 0) return;
-
-        const timer = setTimeout(() => {
-            const dataToSave = {
-                id: currentGenId,
-                title: metaTitle,
-                category: metaCategory,
-                lastModified: Date.now(),
-                data: { nodes, edges, groups, presets: customPresets, stickyNotes }
-            };
-
-            // 1. Salva draft locale (Real-Time persistenza invisibile per non perdere nulla offline)
-            localStorage.setItem(`genopro_data_${currentGenId}`, JSON.stringify(dataToSave));
-
-            // 2. Aggiorna indice locale (necessario per visualizzarlo nella dashboard offiline)
-            const localIndexStr = localStorage.getItem('genopro_local_index');
-            let localList: GenogramMeta[] = localIndexStr ? JSON.parse(localIndexStr) : [];
-            const existingIdx = localList.findIndex((x) => x.id === currentGenId);
-            if (existingIdx >= 0) {
-                localList[existingIdx] = dataToSave;
-            } else {
-                localList.push(dataToSave);
-            }
-            localStorage.setItem('genopro_local_index', JSON.stringify(localList));
-
-            // 3. Salva su Firebase se online
-            if (user && db && syncStatus !== 'offline') {
-                const pathPart = customUser ? customUser : user.uid;
-                setSyncStatus('syncing');
-                setDoc(doc(db, 'artifacts', appId, 'users', pathPart, 'genograms', currentGenId), dataToSave)
-                    .then(() => setSyncStatus('synced'))
-                    .catch(() => setSyncStatus('error'));
-            } else {
-                setSyncStatus('offline');
-            }
-        }, 1500); // Debounce 1.5s
-
-        return () => clearTimeout(timer);
-    }, [nodes, edges, groups, stickyNotes, currentGenId, metaTitle, metaCategory, customPresets, user, db, customUser]);
-
     useLayoutEffect(() => { if (view === 'editor' && containerRef.current) setTimeout(() => { if (containerRef.current) containerRef.current.scrollTo(CENTER_POS - containerRef.current.clientWidth / 2, CENTER_POS - containerRef.current.clientHeight / 2); }, 100); }, [view]);
     const handleSave = () => { alert("I tuoi salvataggi sono gestiti in modo completamente automatico e avvengono ogni volta che compi un'azione!"); };
     // --- 1. GESTIONE STATO CORRETTA (FIX PER DATI FANTASMA) ---
@@ -3964,14 +3939,18 @@ export default function GenogramApp() {
     const createGroup = () => { if (selectedNodeIds.length === 0) return alert("Seleziona nodi"); const g = { id: generateId(), memberIds: [...selectedNodeIds], type: 'household', label: 'Nuovo Gruppo', color: '#000000', notes: [] } as NodeGroup; updateGroups(prev => [...prev, g]); setSelectedGroupIds([g.id]); setSelectedNodeIds([]); };
 
     // --- HELPERS AGGIUNTA RAPIDA ---
+    // Helper per arrotondare alla griglia quando snap è attivo
+    const snap = (v: number) => snapToGrid ? Math.round(v / SNAP_SIZE) * SNAP_SIZE : v;
+
     const addParentsToSelection = () => {
         if (selectedNodeIds.length !== 1) return alert("Seleziona una persona");
         const srcId = selectedNodeIds[0];
         const srcNode = nodes.find(n => n.id === srcId);
         if (!srcNode) return;
         const fId = generateId(); const mId = generateId();
-        const f = { id: fId, x: srcNode.x - 80, y: srcNode.y - 150, gender: 'M', name: 'Padre', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
-        const m = { id: mId, x: srcNode.x + 80, y: srcNode.y - 150, gender: 'F', name: 'Madre', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
+        const parentY = snap(srcNode.y - 150);
+        const f = { id: fId, x: snap(srcNode.x - 80), y: parentY, gender: 'M', name: 'Padre', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
+        const m = { id: mId, x: snap(srcNode.x + 80), y: parentY, gender: 'F', name: 'Madre', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
         const newEs = [{ id: generateId(), fromId: fId, toId: mId, type: 'marriage', label: '', notes: [] }, { id: generateId(), fromId: fId, toId: srcId, type: 'child-bio', label: '', notes: [] }, { id: generateId(), fromId: mId, toId: srcId, type: 'child-bio', label: '', notes: [] }];
         updateAll([...nodes, f as GenNode, m as GenNode], [...edges, ...newEs], groups);
         setSelectedNodeIds([fId, mId]);
@@ -3982,7 +3961,7 @@ export default function GenogramApp() {
         const srcNode = nodes.find(n => n.id === srcId);
         if (!srcNode) return;
         const nId = generateId();
-        const newN = { id: nId, x: srcNode.x + 120, y: srcNode.y, gender: srcNode.gender === 'M' ? 'F' : 'M', name: 'Partner', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
+        const newN = { id: nId, x: snap(srcNode.x + 120), y: snap(srcNode.y), gender: srcNode.gender === 'M' ? 'F' : 'M', name: 'Partner', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
         const newE = { id: generateId(), fromId: srcId, toId: nId, type: 'marriage', label: '', notes: [] };
         updateAll([...nodes, newN as GenNode], [...edges, newE], groups);
         setSelectedNodeIds([nId]);
@@ -3994,7 +3973,7 @@ export default function GenogramApp() {
                 const p1 = nodes.find(n => n.id === edge.fromId); const p2 = nodes.find(n => n.id === edge.toId);
                 if (!p1 || !p2) return;
                 const nId = generateId();
-                const newN = { id: nId, x: (p1.x + p2.x) / 2, y: Math.max(p1.y, p2.y) + 150, gender: 'Unknown', name: 'Figlio', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
+                const newN = { id: nId, x: snap((p1.x + p2.x) / 2), y: snap(Math.max(p1.y, p2.y) + 150), gender: 'Unknown', name: 'Figlio', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
                 const e1 = { id: generateId(), fromId: edge.fromId, toId: nId, type: 'child-bio', label: '', notes: [] }; const e2 = { id: generateId(), fromId: edge.toId, toId: nId, type: 'child-bio', label: '', notes: [] };
                 updateAll([...nodes, newN as GenNode], [...edges, e1, e2], groups); setSelectedNodeIds([nId]); setSelectedEdgeIds([]); return;
             }
@@ -4002,7 +3981,7 @@ export default function GenogramApp() {
         if (selectedNodeIds.length === 1) {
             const srcId = selectedNodeIds[0]; const srcNode = nodes.find(n => n.id === srcId); if (!srcNode) return;
             const marriage = findMarriageEdge(srcId, edges); const nId = generateId();
-            const newN = { id: nId, x: srcNode.x, y: srcNode.y + 150, gender: 'Unknown', name: 'Figlio', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
+            const newN = { id: nId, x: snap(srcNode.x), y: snap(srcNode.y + 150), gender: 'Unknown', name: 'Figlio', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
             const newEdgesList = [{ id: generateId(), fromId: srcId, toId: nId, type: 'child-bio', label: '', notes: [] }];
             if (marriage) { const spouseId = marriage.fromId === srcId ? marriage.toId : marriage.fromId; newEdgesList.push({ id: generateId(), fromId: spouseId, toId: nId, type: 'child-bio', label: '', notes: [] }); }
             updateAll([...nodes, newN as GenNode], [...edges, ...newEdgesList], groups); setSelectedNodeIds([nId]);

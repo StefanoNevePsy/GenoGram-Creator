@@ -1,0 +1,39 @@
+appId: com.genogrambuilder.stefanoneve
+productName: Genogram Builder
+directories:
+  output: release
+  buildResources: public
+files:
+  - dist/**/*
+  - electron/**/*
+  - public/GenoGram_icon.png
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: public/GenoGram_icon.png
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: public/GenoGram_icon.png
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: public/GenoGram_icon.png
+  category: public.app-category.healthcare
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
