@@ -310,7 +310,7 @@ const calculateAge = (birthDateStr: string): string => {
     if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
     return age.toString();
 };
-const findMarriageEdge = (nodeId: string, edges: RelationEdge[]) => edges.find(e => (e.fromId === nodeId || e.toId === nodeId) && ['marriage', 'cohabitation', 'separation', 'divorce', 'affair', 're-marriage'].includes(e.type));
+const findMarriageEdge = (nodeId: string, edges: RelationEdge[]) => edges.find(e => (e.fromId === nodeId || e.toId === nodeId) && RELATION_CATEGORIES["Struttura / Coppia"].includes(e.type));
 const getMarriageBarY = (startY: number, endY: number) => Math.max(startY, endY) + MARRIAGE_DROP_Y;
 
 const getGroupBounds = (group: NodeGroup, nodes: GenNode[]) => {
@@ -1326,7 +1326,7 @@ const ReportModal = ({ onClose, nodes, edges, groups }: { onClose: () => void, n
         // Partner/Spouses
         const spouseEdges = edges.filter(e =>
             (e.fromId === selectedPerson || e.toId === selectedPerson) &&
-            RELATION_CATEGORIES["Struttura"].includes(e.type)
+            RELATION_CATEGORIES["Struttura / Coppia"].includes(e.type)
         );
         const spouses = spouseEdges.map(e => {
             const partnerId = e.fromId === selectedPerson ? e.toId : e.fromId;
@@ -1340,7 +1340,7 @@ const ReportModal = ({ onClose, nodes, edges, groups }: { onClose: () => void, n
 
         const myEdges = edges.filter(e => e.fromId === selectedPerson || e.toId === selectedPerson);
         const relations = myEdges.map(e => {
-            if (RELATION_CATEGORIES["Struttura"].includes(e.type)) return null;
+            if (RELATION_CATEGORIES["Struttura / Coppia"].includes(e.type)) return null;
             const otherId = e.fromId === selectedPerson ? e.toId : e.fromId;
             let otherName = 'Sconosciuto';
             const otherNode = nodes.find(n => n.id === otherId);
@@ -2771,17 +2771,17 @@ export default function GenogramApp() {
     const updateNodes = (newNodes: GenNode[] | ((prev: GenNode[]) => GenNode[])) => {
         const resolved = typeof newNodes === 'function' ? newNodes(nodes) : newNodes;
         setNodes(resolved);
-        pushState(resolved, edges, groups);
+        pushState(resolved, edges, groups, stickyNotes);
     };
     const updateEdges = (newEdges: RelationEdge[] | ((prev: RelationEdge[]) => RelationEdge[])) => {
         const resolved = typeof newEdges === 'function' ? newEdges(edges) : newEdges;
         setEdges(resolved);
-        pushState(nodes, resolved, groups);
+        pushState(nodes, resolved, groups, stickyNotes);
     };
     const updateGroups = (newGroups: NodeGroup[] | ((prev: NodeGroup[]) => NodeGroup[])) => {
         const resolved = typeof newGroups === 'function' ? newGroups(groups) : newGroups;
         setGroups(resolved);
-        pushState(nodes, edges, resolved);
+        pushState(nodes, edges, resolved, stickyNotes);
     };
     // Helper rapido per aggiornare tutto (inclusi post-it)
     const updateAllWithNotes = (n: GenNode[], e: RelationEdge[], g: NodeGroup[], s: any[]) => {
@@ -3969,7 +3969,7 @@ export default function GenogramApp() {
     const addChildToSelection = () => {
         if (selectedEdgeIds.length === 1) {
             const edge = edges.find(e => e.id === selectedEdgeIds[0]);
-            if (edge && RELATION_CATEGORIES["Struttura"].includes(edge.type)) {
+            if (edge && RELATION_CATEGORIES["Struttura / Coppia"].includes(edge.type)) {
                 const p1 = nodes.find(n => n.id === edge.fromId); const p2 = nodes.find(n => n.id === edge.toId);
                 if (!p1 || !p2) return;
                 const nId = generateId();
@@ -4010,7 +4010,7 @@ export default function GenogramApp() {
 
         // --- HELPERS ---
         const getSpouses = (id: string) => edges
-            .filter(e => (e.fromId === id || e.toId === id) && RELATION_CATEGORIES["Struttura"].includes(e.type))
+            .filter(e => (e.fromId === id || e.toId === id) && RELATION_CATEGORIES["Struttura / Coppia"].includes(e.type))
             .map(e => e.fromId === id ? e.toId : e.fromId);
 
         const getParents = (cId: string) => {
@@ -4442,13 +4442,13 @@ export default function GenogramApp() {
 
         return peopleToInclude.map(n => {
             // --- CALCOLO RELAZIONI (Rimane invariato) ---
-            const spouses = edges.filter(e => (e.fromId === n.id || e.toId === n.id) && RELATION_CATEGORIES["Struttura"].includes(e.type))
+            const spouses = edges.filter(e => (e.fromId === n.id || e.toId === n.id) && RELATION_CATEGORIES["Struttura / Coppia"].includes(e.type))
                 .map(e => { const partnerId = e.fromId === n.id ? e.toId : e.fromId; const p = nodes.find(x => x.id === partnerId); const conf = BASE_REL_CONFIG[e.type]; return p ? `<b>${p.name}</b> (${conf.label})` : null; }).filter(Boolean).join(', ');
 
             const children = edges.filter(e => e.fromId === n.id && e.type.startsWith('child'))
                 .map(e => { const c = nodes.find(x => x.id === e.toId); return c ? c.name : null; }).filter(Boolean).join(', ');
 
-            const others = edges.filter(e => (e.fromId === n.id || e.toId === n.id) && !RELATION_CATEGORIES["Struttura"].includes(e.type) && !e.type.startsWith('child'))
+            const others = edges.filter(e => (e.fromId === n.id || e.toId === n.id) && !RELATION_CATEGORIES["Struttura / Coppia"].includes(e.type) && !e.type.startsWith('child'))
                 .map(e => { const otherId = e.fromId === n.id ? e.toId : e.fromId; const otherNode = nodes.find(x => x.id === otherId); const otherGroup = !otherNode ? groups.find(g => g.id === otherId) : null; const name = otherNode ? otherNode.name : (otherGroup ? `Gruppo: ${otherGroup.label}` : 'Sconosciuto'); const conf = BASE_REL_CONFIG[e.type] || { label: e.type }; return `<li>${conf.label} con <b>${name}</b>${e.notes.length ? ` (Note: ${e.notes.map(x => x.text).join('; ')})` : ''}</li>`; }).join('');
 
             const userGroups = groups.filter(g => g.memberIds.includes(n.id)).map(g => g.label).join(', ');
@@ -5336,7 +5336,7 @@ export default function GenogramApp() {
                                     <label className="text-xs opacity-50 font-bold block">Tipo Relazione</label>
                                     <RelationshipSelector value={selectedEdge.type} onChange={(t: string) => {
                                         const conf = BASE_REL_CONFIG[t] || {};
-                                        updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, type: t, color: conf.color, lineStyle: conf.lineStyle, decorator: conf.decorator } : ed));
+                                        updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, type: t, color: conf.color, lineStyle: conf.lineStyle } : ed));
                                     }} className="text-black" />
 
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.label} onChange={e => updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, label: e.target.value } : ed))} placeholder="Etichetta" />
