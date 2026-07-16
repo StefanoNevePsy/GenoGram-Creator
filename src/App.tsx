@@ -7,7 +7,7 @@ import {
     AlignJustify, CircleDashed, Upload, FileText, Search, RotateCcw, RotateCw,
     Home, GraduationCap, BookOpen, User, Filter, SortAsc, Tag, Folder, Briefcase, HelpCircle,
     Target, Grid3X3, TrendingUp, Image as ImageIcon, FileImage, Calendar, Check, Info,
-    Cloud, CloudOff, RefreshCw, CheckCircle2, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, Type, StickyNote, Database, Maximize, Minimize // <--- Network aggiunto qui
+    Cloud, CloudOff, RefreshCw, CheckCircle2, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, Type, StickyNote, Database, Maximize, Minimize, Copy // <--- Network aggiunto qui
 } from 'lucide-react';
 import { StatusBar } from '@capacitor/status-bar';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -253,7 +253,7 @@ type Gender = 'M' | 'F' | 'Pet' | 'Unknown' | 'Pregnancy' | 'Miscarriage' | 'Abo
 interface NoteItem { id: string; text: string; date: string; }
 interface GenNode {
     id: string; x: number; y: number; gender: Gender; name: string; label?: string;
-    birthDate: string; deceased: boolean; indexPerson: boolean;
+    birthDate: string; deceased: boolean; deathDate?: string; indexPerson: boolean;
     substanceAbuse: boolean; mentalIssue: boolean; physicalIssue: boolean; recovery: boolean;
     gayLesbian: boolean;
     showAge?: boolean;
@@ -317,6 +317,15 @@ const calculateAge = (birthDateStr: string): string => {
     const m = now.getMonth() - birth.getMonth();
     if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
     return age.toString();
+};
+// Età al decesso (per persone decedute con data di morte)
+const calculateAgeAtDeath = (birthDateStr: string, deathDateStr: string): string => {
+    const birth = parseDate(birthDateStr); const death = parseDate(deathDateStr);
+    if (!birth || !death) return '?';
+    let age = death.getFullYear() - birth.getFullYear();
+    const m = death.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && death.getDate() < birth.getDate())) age--;
+    return age >= 0 ? age.toString() : '?';
 };
 const findMarriageEdge = (nodeId: string, edges: RelationEdge[]) => edges.find(e => (e.fromId === nodeId || e.toId === nodeId) && RELATION_CATEGORIES["Struttura / Coppia"].includes(e.type));
 const getMarriageBarY = (startY: number, endY: number) => Math.max(startY, endY) + MARRIAGE_DROP_Y;
@@ -1037,12 +1046,20 @@ const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, se
 
     let internalLabel = '';
     if (hasBirthDate && showAge) {
-        if (showLabelType === 'age') internalLabel = calculateAge(node.birthDate);
-        else if (showLabelType === 'year') {
+        const hasDeathDate = node.deceased && node.deathDate && node.deathDate.trim() !== '';
+        if (showLabelType === 'age') {
+            // Per i deceduti con data di morte mostra l'età al decesso
+            internalLabel = hasDeathDate ? calculateAgeAtDeath(node.birthDate, node.deathDate!) : calculateAge(node.birthDate);
+        } else if (showLabelType === 'year') {
             const d = parseDate(node.birthDate);
             if (d) internalLabel = d.getFullYear().toString();
+            // Convenzione genogramma: intervallo "nascita-morte" (es. 1950-2010)
+            if (hasDeathDate) {
+                const dd = parseDate(node.deathDate!);
+                if (d && dd) internalLabel = `${d.getFullYear()}-${dd.getFullYear()}`;
+            }
         } else if (showLabelType === 'date') {
-            internalLabel = node.birthDate;
+            internalLabel = hasDeathDate ? `${node.birthDate} † ${node.deathDate}` : node.birthDate;
         }
     }
 
@@ -3264,9 +3281,19 @@ export default function GenogramApp() {
             }
 
             // UNDO / REDO / SAVE
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); handleUndo(); return; }
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) handleRedo(); else handleUndo(); return; }
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); handleRedo(); return; }
             if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleSave(); return; }
+
+            // CTRL/CMD + 0 : ADATTA CONTENUTO (Zoom to fit)
+            if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); fitView(); return; }
+
+            // CTRL/CMD + D : DUPLICA NODI SELEZIONATI
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && selectedNodeIds.length > 0) {
+                e.preventDefault();
+                duplicateSelectedNodes();
+                return;
+            }
 
             // ALLINEAMENTI E DISTRIBUZIONI (ALT + Tasto)
             // FIX MAC: Usiamo e.code invece di e.key perché su Mac Option+Lettera crea simboli speciali
@@ -3980,6 +4007,24 @@ export default function GenogramApp() {
     // Helper per arrotondare alla griglia quando snap è attivo
     const snap = (v: number) => snapToGrid ? Math.round(v / SNAP_SIZE) * SNAP_SIZE : v;
 
+    // Duplica i nodi selezionati (Ctrl+D), incluse le relazioni interne alla selezione
+    const duplicateSelectedNodes = () => {
+        if (selectedNodeIds.length === 0) return;
+        const idMap = new Map<string, string>();
+        const clones = nodesRef.current.filter(n => selectedNodeIds.includes(n.id)).map(n => {
+            const newId = generateId();
+            idMap.set(n.id, newId);
+            // indexPerson resta unico: la copia non deve creare un secondo paziente indice
+            return { ...n, id: newId, x: snap(n.x + 40), y: snap(n.y + 40), indexPerson: false };
+        });
+        const cloneEdges = edgesRef.current
+            .filter(e => idMap.has(e.fromId) && idMap.has(e.toId))
+            .map(e => ({ ...e, id: generateId(), fromId: idMap.get(e.fromId)!, toId: idMap.get(e.toId)! }));
+        updateAll([...nodesRef.current, ...clones], [...edgesRef.current, ...cloneEdges], groupsRef.current);
+        setSelectedNodeIds(clones.map(c => c.id));
+        setSelectedEdgeIds([]);
+    };
+
     const addParentsToSelection = () => {
         if (selectedNodeIds.length !== 1) return alert("Seleziona una persona");
         const srcId = selectedNodeIds[0];
@@ -4253,6 +4298,21 @@ export default function GenogramApp() {
 
     const centerView = () => { setZoom(1); if (containerRef.current) { containerRef.current.scrollTo({ left: CENTER_POS - containerRef.current.clientWidth / 2, top: CENTER_POS - containerRef.current.clientHeight / 2, behavior: 'smooth' }); } };
 
+    // Zoom-to-fit: inquadra tutto il contenuto con un click
+    const fitView = () => {
+        const c = containerRef.current; if (!c) return;
+        const b = getContentBounds();
+        const pad = 100;
+        const w = (b.maxX - b.minX) + pad * 2;
+        const h = (b.maxY - b.minY) + pad * 2;
+        const newZoom = Math.min(3, Math.max(0.2, Math.min(c.clientWidth / w, c.clientHeight / h)));
+        setZoom(newZoom);
+        // Lo scale ha origine in CENTER_POS: un punto grafo (x,y) appare a CENTER_POS + (x - CENTER_POS) * zoom
+        const cx = CENTER_POS + ((b.minX + b.maxX) / 2 - CENTER_POS) * newZoom;
+        const cy = CENTER_POS + ((b.minY + b.maxY) / 2 - CENTER_POS) * newZoom;
+        c.scrollTo({ left: cx - c.clientWidth / 2, top: cy - c.clientHeight / 2, behavior: 'smooth' });
+    };
+
     // Helper: Calcola i confini esatti del contenuto (Nodi + Gruppi)
     const getContentBounds = useCallback(() => {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -4298,6 +4358,31 @@ export default function GenogramApp() {
 
         const padding = 100;
         return { x: minX - padding, y: minY - padding, w: (maxX - minX) + padding * 2, h: (maxY - minY) + padding * 2 };
+    };
+
+    // Export SVG vettoriale: ideale per tesi/articoli, nessuna perdita di qualità
+    const downloadSVG = () => {
+        if (!svgRef.current) return;
+        const bounds = getGraphBounds();
+        const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
+        const gElement = svgClone.querySelector('g');
+        if (gElement) {
+            gElement.setAttribute('transform', '');
+            gElement.style.transform = '';
+        }
+        svgClone.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`);
+        svgClone.setAttribute('width', `${bounds.w}`);
+        svgClone.setAttribute('height', `${bounds.h}`);
+        svgClone.style.fontFamily = 'sans-serif';
+
+        const svgData = new XMLSerializer().serializeToString(svgClone);
+        const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${metaTitle || 'genogramma'}.svg`;
+        a.click();
+        URL.revokeObjectURL(url);
     };
 
     const downloadImage = async (format: 'png' | 'jpeg') => {
@@ -4496,7 +4581,8 @@ export default function GenogramApp() {
             let detailsParts = [];
             if (options.showGender) detailsParts.push(n.gender);
             if (options.showBirthDate && n.birthDate) detailsParts.push(n.birthDate);
-            if (options.showAge && n.birthDate) detailsParts.push(`${calculateAge(n.birthDate)} anni`);
+            if (options.showBirthDate && n.deceased && n.deathDate) detailsParts.push(`† ${n.deathDate}`);
+            if (options.showAge && n.birthDate) detailsParts.push(n.deceased && n.deathDate ? `${calculateAgeAtDeath(n.birthDate, n.deathDate)} anni (al decesso)` : `${calculateAge(n.birthDate)} anni`);
 
             const detailsString = detailsParts.length > 0 ? `<small style="font-weight:normal; color:#666;">(${detailsParts.join(', ')})</small>` : '';
 
@@ -4699,6 +4785,34 @@ export default function GenogramApp() {
     };
     const handleExportBackup = () => { const blob = new Blob([JSON.stringify(genograms)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_genopro.json`; a.click(); };
 
+    // Recupera il genogramma completo: l'indice locale contiene solo metadati
+    const getFullGenogram = (g: GenogramMeta): GenogramMeta => {
+        try {
+            const s = localStorage.getItem(`genopro_data_${g.id}`);
+            if (s) return JSON.parse(s);
+        } catch { /* usa la versione in stato */ }
+        return g;
+    };
+
+    // Esporta un singolo genogramma come file JSON (condivisibile con colleghi)
+    const exportSingleGenogram = (g: GenogramMeta) => {
+        const full = getFullGenogram(g);
+        const blob = new Blob([JSON.stringify(full)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(full.title || 'genogramma').replace(/[^\w\s-]/g, '')}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    // Duplica un genogramma (es. snapshot per confronto tra sedute)
+    const duplicateGenogram = (g: GenogramMeta) => {
+        const full = getFullGenogram(g);
+        const copy: GenogramMeta = { ...full, id: generateId(), title: `${full.title} (copia)`, lastModified: Date.now() };
+        persistImportedGenograms([copy]);
+    };
+
     const selectedNode = selectedNodeIds.length === 1 ? nodes.find(n => n.id === selectedNodeIds[0]) : null;
     const selectedEdge = edges.find(e => e.id === selectedEdgeIds[0]);
     const selectedGroup = groups.find(g => g.id === selectedGroupIds[0]);
@@ -4819,19 +4933,23 @@ export default function GenogramApp() {
                                                     <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider" style={{ color: catDef.color }}>
                                                         <Icon size={12} /> {catDef.label}
                                                     </div>
-                                                    <button onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (confirm("Eliminare?")) {
-                                                            if (db) deleteDoc(doc(db, 'artifacts', appId, 'users', customUser || user?.uid || 'anon', 'genograms', g.id));
-                                                            localStorage.removeItem(`genopro_data_${g.id}`);
-                                                            const idxStr = localStorage.getItem('genopro_local_index');
-                                                            if (idxStr) {
-                                                                const lst = JSON.parse(idxStr).filter((x: any) => x.id !== g.id);
-                                                                localStorage.setItem('genopro_local_index', JSON.stringify(lst));
+                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button title="Esporta file" onClick={(e) => { e.stopPropagation(); exportSingleGenogram(g); }} className="text-gray-400 hover:text-blue-500"><Download size={16} /></button>
+                                                        <button title="Duplica" onClick={(e) => { e.stopPropagation(); duplicateGenogram(g); }} className="text-gray-400 hover:text-green-600"><Copy size={16} /></button>
+                                                        <button title="Elimina" onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (confirm("Eliminare?")) {
+                                                                if (db) deleteDoc(doc(db, 'artifacts', appId, 'users', customUser || user?.uid || 'anon', 'genograms', g.id));
+                                                                localStorage.removeItem(`genopro_data_${g.id}`);
+                                                                const idxStr = localStorage.getItem('genopro_local_index');
+                                                                if (idxStr) {
+                                                                    const lst = JSON.parse(idxStr).filter((x: any) => x.id !== g.id);
+                                                                    localStorage.setItem('genopro_local_index', JSON.stringify(lst));
+                                                                }
                                                                 setGenograms(prev => prev.filter(x => x.id !== g.id));
                                                             }
-                                                        }
-                                                    }} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16} /></button>
+                                                        }} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
+                                                    </div>
                                                 </div>
                                                 <h3 className="text-lg font-bold mb-1 line-clamp-2 theme-text">{g.title}</h3>
                                                 <div className="mt-auto pt-4 flex items-center justify-between text-xs opacity-60 border-t theme-border">
@@ -5003,6 +5121,7 @@ export default function GenogramApp() {
                     <div className="h-6 w-px bg-gray-300 opacity-30 mx-1 hidden md:block" />
 
                     <button onClick={centerView} className="p-1.5 theme-hover rounded hidden md:block" title="Ricentra"><Target size={18} /></button>
+                    <button onClick={fitView} className="p-1.5 theme-hover rounded" title="Adatta contenuto (Ctrl+0)"><Scan size={18} /></button>
                     <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="p-1.5 theme-hover rounded hidden sm:block"><ZoomOut size={18} /></button>
                     <span className="text-xs w-8 text-center hidden md:block">{Math.round(zoom * 100)}%</span>
                     <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-1.5 theme-hover rounded hidden sm:block"><ZoomIn size={18} /></button>
@@ -5046,6 +5165,7 @@ export default function GenogramApp() {
                             <div className="text-[10px] uppercase font-bold opacity-50 mb-1 px-2">Immagini</div>
                             <button onClick={() => downloadImage('png')} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><ImageIcon size={14} /> Scarica PNG</button>
                             <button onClick={() => downloadImage('jpeg')} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><FileImage size={14} /> Scarica JPEG</button>
+                            <button onClick={downloadSVG} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><GitBranch size={14} /> Scarica SVG (Vettoriale)</button>
 
                             <div className="h-px bg-gray-200 dark:bg-gray-600 my-2 opacity-30" />
 
@@ -5346,6 +5466,9 @@ export default function GenogramApp() {
                                     <input className="w-full border p-1 rounded bg-transparent theme-border font-bold" value={selectedNode.name} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, name: e.target.value } : n))} placeholder="Nome" />
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.label || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, label: e.target.value } : n))} placeholder="Etichetta (es. Padre)" />
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: e.target.value } : n))} placeholder="Nascita (Data, Anno o inserisci direttamente un'Età)" />
+                                    {selectedNode.deceased && (
+                                        <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.deathDate || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, deathDate: e.target.value } : n))} placeholder="Morte (Data o Anno)" />
+                                    )}
 
                                     <div className="flex items-center gap-2 mb-1">
                                         <input
@@ -5356,7 +5479,9 @@ export default function GenogramApp() {
                                         />
                                         <label htmlFor="showAge" className="text-xs opacity-70">Mostra Età</label>
                                     </div>
-                                    <div className="text-xs opacity-50">Età: {calculateAge(selectedNode.birthDate)}</div>
+                                    <div className="text-xs opacity-50">
+                                        Età: {selectedNode.deceased && selectedNode.deathDate ? `${calculateAgeAtDeath(selectedNode.birthDate, selectedNode.deathDate)} (al decesso)` : calculateAge(selectedNode.birthDate)}
+                                    </div>
 
                                     <select className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.gender} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, gender: e.target.value as Gender } : n))}>
                                         <option value="M" className="text-black">Maschio</option><option value="F" className="text-black">Femmina</option>
