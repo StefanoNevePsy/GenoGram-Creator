@@ -170,6 +170,14 @@ const NOTE_BG_PALETTES = {
     'Monocromo': MONOCHROME_PALETTE
 };
 
+const NOTE_TEXT_PALETTES: Record<string, string[]> = {
+    'Neutri': ['#1f2937', '#000000', '#ffffff', '#dc2626', '#2563eb', '#16a34a', '#d97706', '#57534e'],
+    'Pastello': PASTEL_PALETTE,
+    'Vivido': VIVID_PALETTE,
+    'Terra': EARTH_PALETTE,
+    'Monocromo': MONOCHROME_PALETTE
+};
+
 const NOTE_TEXT_COLORS = [
     '#1f2937', // Default Gray 800
     '#000000', // Black
@@ -366,7 +374,7 @@ const getLineIntersection = (p1: { x: number, y: number }, p2: { x: number, y: n
     const t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / d;
     const u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / d;
     if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-        return { x: p1.x + t * (p1.x - p2.x), y: p1.y + t * (p1.y - p2.y) };
+        return { x: p1.x + t * (p2.x - p1.x), y: p1.y + t * (p2.y - p1.y) };
     }
     return null;
 };
@@ -533,7 +541,7 @@ const getGroupGeometry = (g: NodeGroup, nodes: GenNode[]) => {
 
     const hullPoints = getConvexHull(points);
     // Padding aumentato leggermente come richiesto (era 20, ora 23)
-    const padding = g.customPadding || 23;
+    const padding = g.customPadding ?? 23;
 
     return getOrganicBlobPath(hullPoints, padding);
 };
@@ -704,6 +712,8 @@ const LinePreview = ({ type, width = 50, darkMode = false, transparent = false }
     const centerArrowTrans = `translate(${midX}, ${midY})`;
 
     const Decorator = () => {
+        // Migliore Amico: come in ConnectionLine (centrale dotted + 2 esterne solide)
+        if (type === 'best-friend') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /></g>;
         if (config.renderType === 'fusion' || config.renderType === 'triple') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /></g>;
         if (config.renderType === 'fusion-hostile') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /><path d={getZigZagPath(0, midY, actualEndX, midY)} stroke="red" strokeWidth={1.5} fill="none" /></g>;
         if (config.renderType === 'triple-zigzag') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /><path d={getZigZagPath(0, midY, actualEndX, midY)} stroke="red" strokeWidth={1.5} fill="none" /></g>;
@@ -732,6 +742,8 @@ const LinePreview = ({ type, width = 50, darkMode = false, transparent = false }
                 <polygon points="-4,-4 4,0 -4,4" fill={stroke} transform={`translate(${x2}, ${midY})`} />
             </g>;
         }
+        if (config.renderType === 'arrow-open-end') return <polyline points="-5,-4 5,0 -5,4" stroke={stroke} strokeWidth={1.5} fill="none" transform={arrowTrans} />;
+        if (config.renderType === 'arrow-open-center') return <polyline points="-5,-4 5,0 -5,4" stroke={stroke} strokeWidth={1.5} fill="none" transform={centerArrowTrans} />;
         if (config.renderType.includes('arrow') && !config.renderType.includes('center')) return <g><polygon points="-5,-4 5,0 -5,4" fill={stroke} transform={arrowTrans} /></g>;
 
         if (config.renderType === 'arrow-x-center') return <g><polygon points="-5,-4 5,0 -5,4" fill={stroke} transform={arrowTrans} /><g transform={centerArrowTrans}><line x1="-4" y1="-4" x2="4" y2="4" stroke={stroke} strokeWidth={2} /><line x1="-4" y1="4" x2="4" y2="-4" stroke={stroke} strokeWidth={2} /></g></g>;
@@ -746,9 +758,7 @@ const LinePreview = ({ type, width = 50, darkMode = false, transparent = false }
 
     return (
         <svg width={width} height="14" className={containerStyles}>
-            {config.type !== 'best-friend' && (
-                <path d={pathD} stroke={stroke} strokeWidth={strokeW} strokeDasharray={strokeDash} fill="none" />
-            )}
+            <path d={pathD} stroke={stroke} strokeWidth={strokeW} strokeDasharray={strokeDash} fill="none" />
             <Decorator />
         </svg>
     );
@@ -914,12 +924,12 @@ const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customConfig, 
         if (renderType === 'arrow-diamond-center') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /><polygon points="0,-6 6,0 0,6 -6,0" stroke={stroke} strokeWidth={2} fill="white" transform={centerArrowTrans} /></g>;
         if (renderType === 'arrow-double-bar-center') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /><g transform={centerArrowTrans}><line x1="-3" y1="-8" x2="-3" y2="8" stroke={stroke} strokeWidth={2} /><line x1="3" y1="-8" x2="3" y2="8" stroke={stroke} strokeWidth={2} /></g></g>;
 
-        if (renderType.includes('arrow') && !renderType.includes('center') && !renderType.includes('thick')) return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /></g>;
+        // I check specifici devono precedere quello generico, altrimenti sono irraggiungibili
         if (renderType === 'arrow-thick') return <polygon points="-8,-8 4,0 -8,8" fill={stroke} transform={arrowTrans} />;
-
         if (renderType === 'arrow-end') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /></g>;
         if (renderType === 'arrow-open-end') return <g><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={arrowTrans} /></g>;
         if (renderType === 'arrow-open-center') return <g><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={centerArrowTrans} /></g>;
+        if (renderType.includes('arrow') && !renderType.includes('center') && !renderType.includes('thick')) return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /></g>;
         if (renderType === 'triple-zigzag-center-arrow') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(6,6)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-6,-6)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY, 4, 12)} stroke="red" strokeWidth={1.5} fill="none" /><polygon points="-6,-6 6,0 -6,6" fill="red" transform={arrowTrans} /></g>;
 
         return null;
@@ -1942,9 +1952,12 @@ const parseFirebaseConfig = (input: string) => {
 
         // 2. Correzioni specifiche per trasformare JS Object in JSON
 
+        // Se è già JSON valido non serve pulirlo (evita di corrompere i ":" negli URL)
+        try { return JSON.parse(cleaned); } catch { /* continua con la pulizia */ }
+
         // Aggiunge virgolette alle chiavi (es. apiKey: -> "apiKey":)
-        // Regex: trova parole seguite da due punti, ignorando se sono già tra virgolette
-        cleaned = cleaned.replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":');
+        // Ancorata a "{" o "," così i ":" dentro i valori (es. https://) non vengono toccati
+        cleaned = cleaned.replace(/([{,]\s*)(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '$1"$3":');
 
         // Sostituisce apici singoli con doppi per i valori stringa (es. 'valore' -> "valore")
         cleaned = cleaned.replace(/'/g, '"');
@@ -2083,7 +2096,7 @@ const StickyNotePropertiesPanel = ({
 }) => {
     const [bgPaletteType, setBgPaletteType] = useState<keyof typeof NOTE_BG_PALETTES>('Classico');
     // Default su 'Neutri' per il testo perché contiene nero/bianco che sono i più usati
-    const [textPaletteType, setTextPaletteType] = useState<keyof typeof NOTE_BG_PALETTES>('Classico');
+    const [textPaletteType, setTextPaletteType] = useState<keyof typeof NOTE_TEXT_PALETTES>('Neutri');
 
     return (
 
@@ -2192,11 +2205,11 @@ const StickyNotePropertiesPanel = ({
                         value={textPaletteType}
                         onChange={(e) => setTextPaletteType(e.target.value as any)}
                     >
-                        {Object.keys(NOTE_BG_PALETTES).map(key => <option key={key} value={key} className="text-black">{key}</option>)}
+                        {Object.keys(NOTE_TEXT_PALETTES).map(key => <option key={key} value={key} className="text-black">{key}</option>)}
                     </select>
                 </div>
                 <div className="flex flex-wrap gap-2 p-2 border theme-border rounded bg-white/30 dark:bg-black/10">
-                    {NOTE_BG_PALETTES[textPaletteType].map(c => (
+                    {NOTE_TEXT_PALETTES[textPaletteType].map(c => (
                         <button
                             key={c}
                             onClick={() => onUpdate({ textColor: c })}
@@ -2325,18 +2338,25 @@ const StickyNoteShape = ({ note, isSelected, onPointerDown, onUpdate, zoom = 1 }
 
             <foreignObject x={5} y={5} width={note.width - 10} height={note.height - 10} style={{ pointerEvents: 'none' }}>
                 <div
-                    className="w-full h-full text-sm whitespace-pre-wrap overflow-hidden leading-snug flex items-center justify-center"
+                    // Stili inline (non Tailwind): l'SVG serializzato per gli export
+                    // non ha il CSS della pagina, senza questi il testo sparisce/trabocca
                     style={{
+                        width: '100%',
+                        height: '100%',
+                        whiteSpace: 'pre-wrap',
+                        overflow: 'hidden',
+                        lineHeight: 1.375,
                         fontFamily: note.fontFamily || 'sans-serif',
                         fontSize: '13px',
                         color: note.textColor || '#000',
                         opacity: note.opacity < 0.3 && note.textColor === '#000000' ? 1 : 0.9,
                         textAlign: isLabel ? 'center' : 'left',
                         alignItems: isLabel ? 'center' : 'flex-start',
+                        justifyContent: 'center',
                         display: 'flex'
                     }}
                 >
-                    <span className="w-full">{note.text || (isLabel ? "Etichetta" : "Nuova nota...")}</span>
+                    <span style={{ width: '100%' }}>{note.text || (isLabel ? "Etichetta" : "Nuova nota...")}</span>
                 </div>
             </foreignObject>
 
@@ -2758,15 +2778,17 @@ export default function GenogramApp() {
 
     const [history, setHistory] = useState<string[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
+    // Indice sincrono: evita la corruzione della history quando pushState
+    // viene chiamato più volte nello stesso tick (closure stantia su historyIndex)
+    const historyIndexRef = useRef(historyIndex);
 
     const pushState = useCallback((n: GenNode[], e: RelationEdge[], g: NodeGroup[], s: any[]) => {
         const stateStr = JSON.stringify({ nodes: n, edges: e, groups: g, stickyNotes: s });
-        setHistory(prev => {
-            const upToCurrent = prev.slice(0, historyIndex + 1);
-            return [...upToCurrent, stateStr];
-        });
-        setHistoryIndex(prev => prev + 1);
-    }, [historyIndex]);
+        const newIndex = historyIndexRef.current + 1;
+        setHistory(prev => [...prev.slice(0, newIndex), stateStr]);
+        historyIndexRef.current = newIndex;
+        setHistoryIndex(newIndex);
+    }, []);
 
     const updateNodes = (newNodes: GenNode[] | ((prev: GenNode[]) => GenNode[])) => {
         const resolved = typeof newNodes === 'function' ? newNodes(nodes) : newNodes;
@@ -2799,30 +2821,34 @@ export default function GenogramApp() {
     // ---------------------------------------
 
     const handleUndo = () => {
-        if (historyIndex > 0) {
-            const prevIdx = historyIndex - 1;
+        if (historyIndexRef.current > 0) {
+            const prevIdx = historyIndexRef.current - 1;
             const state = JSON.parse(history[prevIdx]);
             setNodes(state.nodes);
             setEdges(state.edges);
             setGroups(state.groups);
+            setStickyNotes(state.stickyNotes || []);
+            historyIndexRef.current = prevIdx;
             setHistoryIndex(prevIdx);
         }
     };
 
     const handleRedo = () => {
-        if (historyIndex < history.length - 1) {
-            const nextIdx = historyIndex + 1;
+        if (historyIndexRef.current < history.length - 1) {
+            const nextIdx = historyIndexRef.current + 1;
             const state = JSON.parse(history[nextIdx]);
             setNodes(state.nodes);
             setEdges(state.edges);
             setGroups(state.groups);
+            setStickyNotes(state.stickyNotes || []);
+            historyIndexRef.current = nextIdx;
             setHistoryIndex(nextIdx);
         }
     };
 
     useEffect(() => {
         if (history.length === 0 && view === 'editor') {
-            pushState(nodes, edges, groups);
+            pushState(nodes, edges, groups, stickyNotes);
         }
     }, [view]);
 
@@ -2950,20 +2976,30 @@ export default function GenogramApp() {
                 lastModified: Date.now(),
                 data: { nodes, edges, groups, presets: customPresets, stickyNotes }
             };
+            // Il round-trip JSON rimuove le chiavi con valore undefined (Firestore le rifiuta)
+            const serialized = JSON.stringify(dataToSave);
+            const sanitized = JSON.parse(serialized);
 
-            // 1. Salva draft locale (persistenza offline)
-            localStorage.setItem(`genopro_data_${currentGenId}`, JSON.stringify(dataToSave));
+            // 1-2. Salvataggio locale protetto: un QuotaExceededError non deve bloccare il sync cloud
+            try {
+                // Draft locale (persistenza offline)
+                localStorage.setItem(`genopro_data_${currentGenId}`, serialized);
 
-            // 2. Aggiorna indice locale (per la dashboard offline)
-            const localIndexStr = localStorage.getItem('genopro_local_index');
-            let localList: GenogramMeta[] = localIndexStr ? JSON.parse(localIndexStr) : [];
-            const existingIdx = localList.findIndex((x) => x.id === currentGenId);
-            if (existingIdx >= 0) {
-                localList[existingIdx] = dataToSave;
-            } else {
-                localList.push(dataToSave);
+                // Indice locale (per la dashboard offline): solo metadati, i dati completi
+                // sono già in genopro_data_<id> — evita di raddoppiare l'occupazione
+                const localIndexStr = localStorage.getItem('genopro_local_index');
+                let localList: GenogramMeta[] = localIndexStr ? JSON.parse(localIndexStr) : [];
+                const metaEntry = { id: currentGenId, title: metaTitle, category: metaCategory, lastModified: dataToSave.lastModified } as GenogramMeta;
+                const existingIdx = localList.findIndex((x) => x.id === currentGenId);
+                if (existingIdx >= 0) {
+                    localList[existingIdx] = metaEntry;
+                } else {
+                    localList.push(metaEntry);
+                }
+                localStorage.setItem('genopro_local_index', JSON.stringify(localList));
+            } catch (err) {
+                console.error("Errore salvataggio locale (quota?):", err);
             }
-            localStorage.setItem('genopro_local_index', JSON.stringify(localList));
 
             // 3. Salva su Firebase se online
             if (user && db) {
@@ -2973,7 +3009,7 @@ export default function GenogramApp() {
                 setSyncStatus('syncing');
                 try {
                     const docRef = doc(db, 'artifacts', appId, 'users', pathPart, 'genograms', currentGenId);
-                    await setDoc(docRef, dataToSave, { merge: true });
+                    await setDoc(docRef, sanitized, { merge: true });
                     setSyncStatus('synced');
                 } catch (err) {
                     console.error("Errore Salvataggio:", err);
@@ -3245,19 +3281,19 @@ export default function GenogramApp() {
             }
 
             // CANCELLAZIONE
-            if ((e.key === 'Backspace' || e.key === 'Delete') && (selectedNodeIds.length > 0 || selectedEdgeIds.length > 0 || selectedGroupIds.length > 0)) {
+            if ((e.key === 'Backspace' || e.key === 'Delete') && (selectedNodeIds.length > 0 || selectedEdgeIds.length > 0 || selectedGroupIds.length > 0 || selectedNoteIds.length > 0)) {
                 if (confirm("Eliminare gli elementi selezionati?")) {
                     let newNodes = nodesRef.current.filter(n => !selectedNodeIds.includes(n.id));
                     let newEdges = edgesRef.current.filter(ed => !selectedNodeIds.includes(ed.fromId) && !selectedNodeIds.includes(ed.toId) && !selectedEdgeIds.includes(ed.id));
                     let newGroups = groupsRef.current.filter(g => !selectedGroupIds.includes(g.id));
-                    let newNotes = stickyNotes.filter(n => !selectedNoteIds.includes(n.id)); // <--- Filtra Note
+                    let newNotes = stickyNotesRef.current.filter(n => !selectedNoteIds.includes(n.id)); // <--- Filtra Note
                     updateAll(newNodes, newEdges, newGroups, newNotes);
                     setSelectedNodeIds([]); setSelectedEdgeIds([]); setSelectedGroupIds([]); setSelectedNoteIds([]);
                 }
             }
 
             if (e.key === 'Esc' || e.key === 'Escape') {
-                setSelectedNodeIds([]); setSelectedEdgeIds([]); setSelectedGroupIds([]); setQuickMenu(null);
+                setSelectedNodeIds([]); setSelectedEdgeIds([]); setSelectedGroupIds([]); setSelectedNoteIds([]); setQuickMenu(null);
             }
 
             // SPAWN RAPIDO SOTTO IL MOUSE (M/F) - FIX DEFINITIVO
@@ -3308,7 +3344,7 @@ export default function GenogramApp() {
             window.removeEventListener('keydown', handleGlobalKeyDown);
             window.removeEventListener('keyup', handleGlobalKeyUp);
         };
-    }, [selectedNodeIds, selectedEdgeIds, selectedGroupIds, historyIndex, history, zoom]);
+    }, [selectedNodeIds, selectedEdgeIds, selectedGroupIds, selectedNoteIds, historyIndex, history, zoom]);
 
     const getEventCoords = (e: any) => {
         let clientX, clientY;
@@ -3411,7 +3447,7 @@ export default function GenogramApp() {
 
             longPressTimerRef.current = setTimeout(() => {
                 // Ferma il drag
-                dragRef.current = { active: false, ...dragRef.current };
+                dragRef.current = { ...dragRef.current, active: false };
                 setDragState(null);
                 // Apri menu
                 const { x, y } = getGraphCoordinates(clientX, clientY);
@@ -3907,11 +3943,13 @@ export default function GenogramApp() {
 
         setHistory([]);
         setHistoryIndex(-1);
+        historyIndexRef.current = -1;
         setTimeout(() => {
             // Includi le note nello stato iniziale della storia
             const initialState = JSON.stringify({ nodes: newNodes, edges: newEdges, groups: newGroups, stickyNotes: newNotes });
             setHistory([initialState]);
             setHistoryIndex(0);
+            historyIndexRef.current = 0;
         }, 0);
     };
 
@@ -3995,10 +4033,12 @@ export default function GenogramApp() {
 
     // --- AUTO LAYOUT V33 (Physics Relaxation & Constraint Solver) ---
     const autoLayout = () => {
-        const scopeNodes = selectedNodeIds.length > 0 ? nodes.filter(n => selectedNodeIds.includes(n.id)) : nodes;
+        // Lavora SEMPRE sulle copie: mutare gli oggetti dello stato React è vietato
+        // e le posizioni calcolate finirebbero perse (updateNodes applica allNodes)
+        const allNodes = JSON.parse(JSON.stringify(nodes)) as GenNode[];
+        const scopeNodes = selectedNodeIds.length > 0 ? allNodes.filter(n => selectedNodeIds.includes(n.id)) : allNodes;
         if (scopeNodes.length === 0) return;
 
-        const allNodes = JSON.parse(JSON.stringify(nodes)) as GenNode[];
         const nodeMap = new Map(allNodes.map(n => [n.id, n]));
 
         // Costanti
@@ -4030,7 +4070,9 @@ export default function GenogramApp() {
 
         const calcHeight = (id: string, visited = new Set<string>()): number => {
             if (visited.has(id)) return 0;
-            if (generations.get(id)! !== -1) return generations.get(id)!;
+            const g = generations.get(id);
+            if (g === undefined) return 0; // Nodo fuori dallo scope selezionato: evita NaN
+            if (g !== -1) return g;
             visited.add(id);
 
             const children = getChildren([id]);
@@ -4239,21 +4281,18 @@ export default function GenogramApp() {
 
         // FIX: Legenda in alto a sinistra (Top-Left Corner)
         if (showLegend) {
-            const legWidth = 220; // Larghezza fissa legenda
-
             // Stima altezza legenda
             const usedGenders = new Set(nodes.map(n => n.gender)).size + (nodes.some(n => n.deceased) ? 1 : 0) + (nodes.some(n => n.indexPerson) ? 1 : 0);
             const usedRels = new Set(edges.map(e => e.type)).size;
             const estimatedH = 80 + (Math.max(usedGenders, usedRels) * 24) + 20;
 
-            // Posiziona legenda: a sinistra del contenuto, allineata in alto
-            // Aggiungiamo un margine di 50px tra la legenda e il grafico
-            const legX = minX - legWidth - 50;
+            // Stessa X usata nel rendering della <Legend> (b.minX - 350),
+            // altrimenti negli export la legenda risulta tagliata
+            const legX = minX - 350;
             const legY = minY;
 
             minX = Math.min(minX, legX);
             minY = Math.min(minY, legY);
-            maxX = Math.max(maxX, minX + legWidth + (maxX - minX)); // Estendi a destra se serve (raro)
             maxY = Math.max(maxY, legY + estimatedH);
         }
 
@@ -4543,13 +4582,11 @@ export default function GenogramApp() {
                 const strokeDash = config.lineStyle === 'dashed' ? 'stroke-dasharray="4,2"' : (config.lineStyle === 'dotted' ? 'stroke-dasharray="1,2"' : '');
                 const strokeW = config.lineStyle.startsWith('zigzag') ? "1.5" : "2";
 
-                let baseHtml = '';
-                if (config.type !== 'best-friend') {
-                    baseHtml = `<path d="${pathD}" stroke="${color}" stroke-width="${strokeW}" ${strokeDash} fill="none" />`;
-                }
+                let baseHtml = `<path d="${pathD}" stroke="${color}" stroke-width="${strokeW}" ${strokeDash} fill="none" />`;
 
-                if (config.renderType === 'fusion' || config.renderType === 'triple') baseHtml += `<g><path d="${pathD}" stroke="${color}" stroke-width="1" transform="translate(0, 3)" fill="none"/><path d="${pathD}" stroke="${color}" stroke-width="1" transform="translate(0, -3)" fill="none"/></g>`;
-                if (config.renderType === 'double' || config.renderType === 'double-zigzag' || config.renderType === 'best-friend') baseHtml += `<path d="${pathD}" stroke="${color}" stroke-width="1" transform="translate(0, 3)" fill="none" ${strokeDash}/>`;
+                if (type === 'best-friend') baseHtml += `<g><path d="${pathD}" stroke="${color}" stroke-width="1" transform="translate(0, 3)" fill="none"/><path d="${pathD}" stroke="${color}" stroke-width="1" transform="translate(0, -3)" fill="none"/></g>`;
+                else if (config.renderType === 'fusion' || config.renderType === 'triple') baseHtml += `<g><path d="${pathD}" stroke="${color}" stroke-width="1" transform="translate(0, 3)" fill="none"/><path d="${pathD}" stroke="${color}" stroke-width="1" transform="translate(0, -3)" fill="none"/></g>`;
+                else if (config.renderType === 'double' || config.renderType === 'double-zigzag') baseHtml += `<path d="${pathD}" stroke="${color}" stroke-width="1" transform="translate(0, 3)" fill="none" ${strokeDash}/>`;
 
                 if (config.renderType === 'double-arrow-inward') {
                     const x1 = actualEndX * 0.3; const x2 = actualEndX * 0.7;
@@ -4613,7 +4650,53 @@ export default function GenogramApp() {
         }
     };
 
-    const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const data = JSON.parse(ev.target?.result as string); if (Array.isArray(data)) { setGenograms(prev => [...prev, ...data]); alert("Importazione completata!"); } } catch (err) { alert("Errore file"); } }; reader.readAsText(file); };
+    // Persiste i genogrammi importati (localStorage + indice + cloud best-effort):
+    // senza questo, l'import spariva al primo reload o refresh remoto
+    const persistImportedGenograms = async (items: GenogramMeta[]) => {
+        const existingIds = new Set(genograms.map(g => g.id));
+        const imported: GenogramMeta[] = items
+            .filter(it => it && it.id && it.data)
+            .map(it => existingIds.has(it.id) ? { ...it, id: generateId(), title: `${it.title} (importato)` } : it);
+        if (imported.length === 0) return 0;
+
+        try {
+            const idxStr = localStorage.getItem('genopro_local_index');
+            const idx: GenogramMeta[] = idxStr ? JSON.parse(idxStr) : [];
+            imported.forEach(g => {
+                localStorage.setItem(`genopro_data_${g.id}`, JSON.stringify(g));
+                idx.push({ id: g.id, title: g.title, category: g.category, lastModified: g.lastModified || Date.now() } as GenogramMeta);
+            });
+            localStorage.setItem('genopro_local_index', JSON.stringify(idx));
+        } catch (err) { console.error("Errore persistenza import:", err); }
+
+        if (user && db) {
+            const pathPart = customUser ? customUser : user.uid;
+            if (pathPart) {
+                for (const g of imported) {
+                    try { await setDoc(doc(db, 'artifacts', appId, 'users', pathPart, 'genograms', g.id), JSON.parse(JSON.stringify(g)), { merge: true }); } catch { /* offline: resta il salvataggio locale */ }
+                }
+            }
+        }
+
+        setGenograms(prev => [...prev, ...imported]);
+        return imported.length;
+    };
+
+    const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+            try {
+                const data = JSON.parse(ev.target?.result as string);
+                // Supporta sia il backup completo (array) che il singolo genogramma (oggetto)
+                const items = Array.isArray(data) ? data : [data];
+                const count = await persistImportedGenograms(items);
+                alert(count > 0 ? `Importazione completata! (${count} genogrammi)` : "Nessun genogramma valido nel file");
+            } catch (err) { alert("Errore file"); }
+        };
+        reader.readAsText(file);
+        e.target.value = ''; // permette di reimportare lo stesso file
+    };
     const handleExportBackup = () => { const blob = new Blob([JSON.stringify(genograms)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_genopro.json`; a.click(); };
 
     const selectedNode = selectedNodeIds.length === 1 ? nodes.find(n => n.id === selectedNodeIds[0]) : null;
@@ -4726,8 +4809,8 @@ export default function GenogramApp() {
                                             setCurrentGenId(g.id);
                                             setMetaTitle(g.title);
                                             setMetaCategory(g.category);
-                                            setCustomPresets(g.data.presets || []);
-                                            resetEditorState(g.data.nodes || [], g.data.edges || [], g.data.groups || [], g.data.stickyNotes || []);
+                                            setCustomPresets(g.data?.presets || []);
+                                            resetEditorState(g.data?.nodes || [], g.data?.edges || [], g.data?.groups || [], g.data?.stickyNotes || []);
                                             setView('editor');
                                         }} className="group relative theme-panel rounded-xl shadow-sm hover:shadow-md transition-all border theme-border cursor-pointer overflow-hidden flex flex-col h-48">
                                             <div className="absolute top-0 left-0 w-1.5 h-full" style={{ backgroundColor: catDef.color }} />
@@ -4753,7 +4836,7 @@ export default function GenogramApp() {
                                                 <h3 className="text-lg font-bold mb-1 line-clamp-2 theme-text">{g.title}</h3>
                                                 <div className="mt-auto pt-4 flex items-center justify-between text-xs opacity-60 border-t theme-border">
                                                     <span>{new Date(g.lastModified).toLocaleDateString()}</span>
-                                                    <span className="flex items-center gap-1"><Users size={12} /> {g.data.nodes?.length || 0}</span>
+                                                    <span className="flex items-center gap-1"><Users size={12} /> {g.data?.nodes?.length || 0}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -5293,7 +5376,7 @@ export default function GenogramApp() {
 
                                     <NotesPanel notes={selectedNode.notes} onChange={newNotes => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, notes: newNotes } : n))} />
 
-                                    <button onClick={() => { updateNodes(nodes.filter(n => !selectedNodeIds.includes(n.id))); updateEdges(edges.filter(e => !selectedNodeIds.includes(e.fromId) && !selectedNodeIds.includes(e.toId))); setSelectedNodeIds([]); }} className="w-full bg-red-100 text-red-600 py-2 rounded text-xs hover:bg-red-200 mt-4 flex items-center justify-center gap-2"><Trash2 size={14} /> Elimina Persona</button>
+                                    <button onClick={() => { updateAll(nodes.filter(n => !selectedNodeIds.includes(n.id)), edges.filter(e => !selectedNodeIds.includes(e.fromId) && !selectedNodeIds.includes(e.toId)), groups); setSelectedNodeIds([]); }} className="w-full bg-red-100 text-red-600 py-2 rounded text-xs hover:bg-red-200 mt-4 flex items-center justify-center gap-2"><Trash2 size={14} /> Elimina Persona</button>
                                 </div>
                             )}
 
