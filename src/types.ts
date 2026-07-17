@@ -21,12 +21,14 @@ export interface GenogramMeta { id: string; title: string; category: string; las
 export type MinuchinRelationType = 'alliance' | 'overinvolvement' | 'conflict' | 'coalition' | 'detouring';
 export type BoundaryStyle = 'clear' | 'diffuse' | 'rigid' | 'none';
 export interface MinuchinRelation { id: string; fromId: string; toId: string; type: MinuchinRelationType; thirdId?: string; }
+export interface VerticalBoundary { id: string; x: number; style: BoundaryStyle; }
 export interface StructuralMap {
     id: string;
     label: string;
     memberIds: string[];
     positions: Record<string, { x: number, level: number }>;
     boundaries: Record<number, BoundaryStyle>; // stile del confine sotto ogni livello
+    vBoundaries?: VerticalBoundary[];          // confini verticali tra sottosistemi
     relations: MinuchinRelation[];
     notes: NoteItem[];
 }

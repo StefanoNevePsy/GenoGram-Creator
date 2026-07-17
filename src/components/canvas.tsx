@@ -373,43 +373,12 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
 };
 
 // --- COMPONENTE NODE SHAPE CON RINOMINA E COLORI ---
-export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, selectionMode, onRename }: any) => {
-    const [isEditing, setIsEditing] = useState(false);
-    const [editName, setEditName] = useState(node.name);
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    useEffect(() => {
-        if (isEditing && inputRef.current) {
-            inputRef.current.focus();
-            inputRef.current.select();
-        }
-    }, [isEditing]);
-
-    const handleDoubleClick = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setEditName(node.name);
-        setIsEditing(true);
-    };
-
-    const handleBlur = () => {
-        setIsEditing(false);
-        if (editName.trim() !== "" && editName !== node.name) {
-            onRename(node.id, editName);
-        }
-    };
-
-
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') handleBlur();
-        if (e.key === 'Escape') setIsEditing(false);
-    };
-
+// --- SIMBOLO PERSONA CONDIVISO (genogramma + mappe Minuchin) ---
+// Forma per genere, marcatori clinici, deceduto, paziente designato, istituzionalizzazione.
+export const PersonSymbol = ({ node, darkMode, isSelected = false }: { node: GenNode, darkMode: boolean, isSelected?: boolean }) => {
     const strokeColor = darkMode ? '#ffffff' : '#000000';
     const strokeWidth = isSelected ? 3 : (node.indexPerson ? 3 : 1.5);
     const fill = isSelected ? (darkMode ? '#374151' : '#e0f2fe') : (darkMode ? '#1f2937' : '#ffffff');
-    const textColor = darkMode ? '#ffffff' : '#000000';
-    const textBg = darkMode ? '#111827' : '#ffffff';
     const w = NODE_WIDTH, h = NODE_HEIGHT;
     const r = NODE_RADIUS;
 
@@ -486,6 +455,46 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
     const DeceasedMark = node.deceased ? <g stroke={strokeColor} strokeWidth={1.5}><line x1={0} y1={0} x2={w} y2={h} /><line x1={w} y1={0} x2={0} y2={h} /></g> : null;
     const IndexMark = node.indexPerson ? (node.gender === 'M' ? <rect x={6} y={6} width={w - 12} height={h - 12} stroke={strokeColor} strokeWidth={1.5} fill="none" /> : <circle cx={w / 2} cy={h / 2} r={w / 2 - 6} stroke={strokeColor} strokeWidth={1.5} fill="none" />) : null;
 
+    return <g>{Shape}<Issues />{IndexMark}{DeceasedMark}{InstitutionMark}</g>;
+};
+
+export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, selectionMode, onRename }: any) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [editName, setEditName] = useState(node.name);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isEditing && inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.select();
+        }
+    }, [isEditing]);
+
+    const handleDoubleClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setEditName(node.name);
+        setIsEditing(true);
+    };
+
+    const handleBlur = () => {
+        setIsEditing(false);
+        if (editName.trim() !== "" && editName !== node.name) {
+            onRename(node.id, editName);
+        }
+    };
+
+
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') handleBlur();
+        if (e.key === 'Escape') setIsEditing(false);
+    };
+
+    const textColor = darkMode ? '#ffffff' : '#000000';
+    const textBg = darkMode ? '#111827' : '#ffffff';
+    const w = NODE_WIDTH, h = NODE_HEIGHT;
+    const r = NODE_RADIUS;
+
     const hasBirthDate = node.birthDate && node.birthDate.trim() !== '';
     const showAge = node.showAge !== false; // Default true
 
@@ -545,7 +554,7 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
 
     return (
         <g transform={`translate(${node.x},${node.y})`} className="cursor-pointer group" onDoubleClick={handleDoubleClick}>
-            {Shape} <Issues /> {IndexMark} {DeceasedMark} {InstitutionMark}
+            <PersonSymbol node={node} darkMode={darkMode} isSelected={isSelected} />
 
             {isEditing ? (
                 <foreignObject x={-40} y={-30} width={120} height={30}>
