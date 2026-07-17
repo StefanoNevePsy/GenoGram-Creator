@@ -21,13 +21,16 @@ senza NUOVI errori (vedi nota sotto).
       agganciano per riga con spostamento minimo verso il coniuge.
 
 ## Da fare (in ordine)
-- [ ] **Fase 2** — `services/firebase.ts` (init + parseFirebaseConfig),
-      `services/storage.ts` (indice locale, draft, persistImportedGenograms,
-      getFullGenogram, export/import). Attenzione: oggi vivono nel componente.
-- [ ] **Fase 3** — Componenti foglia → `components/canvas/` (Legend, LinePreview,
-      ConnectionLine, NodeShape, StickyNoteShape, SelectionTransformer),
-      `components/modals/`, `components/panels/`. Tecnica: sed su range di righe
-      + header import + `export` prefix, tsc guida gli aggiustamenti.
+- [x] **Fase 2 (parziale)** — `services/firebase.ts` (parseFirebaseConfig).
+      Resta: `services/storage.ts` (indice locale, draft, persistImportedGenograms,
+      getFullGenogram, export/import — oggi closure dentro GenogramApp).
+- [x] **Fase 3** — Componenti estratti: `components/canvas.tsx` (Legend, LinePreview,
+      RelationshipSelector, ConnectionLine, NodeShape, SelectionTransformer,
+      StickyNoteShape), `components/panels.tsx` (QuickRelMenu, PalettePicker,
+      NotesPanel, ThemeSelector, StickyNotePropertiesPanel), `components/modals.tsx`
+      (ReportModal, SettingsModal, InstructionsModal, StyleDesignerModal,
+      ReportConfigModal). App.tsx: 5695 → ~3230 righe. Eventuale split per-file
+      dei cluster è cosmetico, bassa priorità.
 - [ ] **Fase 4** — `hooks/useHistory.ts` (stack+index+historyIndexRef INSIEME),
       `hooks/useAutosave.ts`. Delicato: closure e ref condivisi.
 - [ ] **Fase 5** — `GenogramCanvas` + gesture (drag/pan/zoom). Ultimo, rischio alto.
