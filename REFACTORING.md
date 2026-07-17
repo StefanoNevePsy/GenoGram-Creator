@@ -1,53 +1,66 @@
 # Piano di refactoring — stato di avanzamento
 
-Obiettivo: spezzare `src/App.tsx` (~5.100 righe) in moduli, aggiungere il layout
-automatico Carter & McGoldrick e nuovi simboli clinici.
-Gate di qualità: `npm run build` sempre verde + `tsc -p tsconfig.app.json --noEmit`
-senza NUOVI errori (vedi nota sotto).
+Obiettivo: spezzare `src/App.tsx` in moduli, layout automatico Carter & McGoldrick,
+nuovi simboli clinici.
+
+**Gate di qualità (tutti verdi, da mantenere tali):**
+- `npx tsc -p tsconfig.app.json --noEmit` → 0 errori (strict, noUnusedLocals)
+- `npm test` → vitest, 23 test
+- `npm run build` → produzione
+Nota storica: `npx tsc --noEmit` alla radice è un NO-OP (tsconfig con files:[] +
+references) — non usarlo come verifica.
 
 ## Fatto
-- [x] **Fase 1** — Estratti moduli puri:
-  - `src/types.ts` (Gender, GenNode, RelationEdge, NodeGroup, GenogramMeta, StickyNoteData, ReportOptions…)
-  - `src/config/relationships.ts` (BASE_REL_CONFIG, RELATION_CATEGORIES)
-  - `src/config/categories.ts`, `src/config/themes.ts`, `src/config/constants.ts`
-  - `src/utils/dates.ts` (parseDate, calculateAge, calculateAgeAtDeath, extractYear)
-  - `src/utils/genogram.ts` (generateId, findMarriageEdge, getMarriageBarY)
-  - `src/utils/geometry.ts` (hull, intersezioni, blob organico, zigzag…)
-
+- [x] **Fase 1** — Moduli puri: `types.ts`, `config/{relationships,categories,themes,constants}.ts`,
+      `utils/{dates,genogram,geometry}.ts`.
 - [x] **Layout C&M** (`src/layout/autoLayout.ts`): motore deterministico a blocchi,
-      integrato come bottone GitBranch accanto al layout fisico V33. Collaudato su
-      fixture (3 generazioni con nonni entrambi i lati; divorzio+risposato con figli
-      di due letti; gemelli; nodo isolato ignorato). Le famiglie acquisite si
-      agganciano per riga con spostamento minimo verso il coniuge.
-
-## Da fare (in ordine)
-- [x] **Fase 2 (parziale)** — `services/firebase.ts` (parseFirebaseConfig).
-      Resta: `services/storage.ts` (indice locale, draft, persistImportedGenograms,
-      getFullGenogram, export/import — oggi closure dentro GenogramApp).
-- [x] **Fase 3** — Componenti estratti: `components/canvas.tsx` (Legend, LinePreview,
-      RelationshipSelector, ConnectionLine, NodeShape, SelectionTransformer,
-      StickyNoteShape), `components/panels.tsx` (QuickRelMenu, PalettePicker,
-      NotesPanel, ThemeSelector, StickyNotePropertiesPanel), `components/modals.tsx`
-      (ReportModal, SettingsModal, InstructionsModal, StyleDesignerModal,
-      ReportConfigModal). App.tsx: 5695 → ~3230 righe. Eventuale split per-file
-      dei cluster è cosmetico, bassa priorità.
-- [ ] **Fase 4** — `hooks/useHistory.ts` (stack+index+historyIndexRef INSIEME),
-      `hooks/useAutosave.ts`. Delicato: closure e ref condivisi.
-- [ ] **Fase 5** — `GenogramCanvas` + gesture (drag/pan/zoom). Ultimo, rischio alto.
-- [x] **Simboli nuovi (prima tranche)**: dipendenza comportamentale (righe teal),
+      bottone GitBranch in toolbar accanto al layout fisico V33. Regole: generazioni
+      su righe; fratelli per età (primogenito a sx, gemelli adiacenti); M a sx;
+      matrimoni multipli in catena cronologica; genitori centrati sui figli;
+      famiglie acquisite traslate verso il coniuge con collisioni per riga;
+      warning (mai NaN) su cicli/generazioni incompatibili; isolati non toccati.
+- [x] **Fase 2** — `services/firebase.ts` (parseFirebaseConfig) e
+      `services/storage.ts` (readLocalIndex, readFullGenogram, saveDraftAndIndex,
+      removeLocalGenogram, persistImportedLocally, downloadJsonFile).
+- [x] **Fase 3** — `components/canvas.tsx` (Legend, LinePreview, RelationshipSelector,
+      ConnectionLine, NodeShape, SelectionTransformer, StickyNoteShape),
+      `components/panels.tsx` (QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector,
+      StickyNotePropertiesPanel), `components/modals.tsx` (ReportModal, SettingsModal,
+      InstructionsModal, StyleDesignerModal, ReportConfigModal).
+- [x] **Fase 4** — `hooks/useHistory.ts` (stack+indice sincrono via ref, undo/redo
+      con sticky notes, updateNodes/Edges/Groups/All, resetHistory) e
+      `hooks/useAutosave.ts` (debounce, sanificazione undefined per Firestore,
+      salvataggio locale quota-safe). App.tsx: 5.695 → ~3.040 righe.
+- [x] **Strict debt** — bonificati tutti i 28 errori pre-esistenti.
+- [x] **Vitest** — 23 test: 14 sul layout C&M (3 generazioni, divorzio+risposato,
+      gemelli, grafo vuoto, ciclo genitore-figlio, coniugi su generazioni
+      incompatibili) + 9 su utils/dates.
+- [x] **Simboli (prima tranche)** — Nodo: dipendenza comportamentale (righe teal),
       disturbo alimentare (contorno interno tratteggiato), istituzionalizzazione
-      (parentesi quadre), campo professione (input + rendering + report);
-      relazioni "violenza reciproca" (renderType arrow-open-both) e "fidanzati
-      conviventi". Restano (M, opzionali): immigrazione con anno, PMA/donatore,
-      distinzione alcol/droghe.
-- [x] **Pulizia**: eliminati `genogramConfig.ts`, `fix*.cjs`, `events.txt`.
-- [x] **Debito strict**: bonificati tutti i 28 errori. Ora il gate è
-      `npx tsc -p tsconfig.app.json --noEmit` (verde) + `npm test` + `npm run build`.
-- [x] **Vitest**: installato; `npm test` esegue 14 test su `layout/autoLayout.ts`
-      (3 generazioni, divorzio+risposato, gemelli, grafo vuoto, ciclo, coniugi
-      su generazioni incompatibili).
+      (parentesi quadre), campo professione (pannello + rendering + report).
+      Relazioni: violenza reciproca (renderType `arrow-open-both`), fidanzati
+      conviventi. Tutti i flag nuovi sono opzionali → retrocompatibili coi dati salvati.
+- [x] **Pulizia** — eliminati `genogramConfig.ts`, `fix*.cjs`, `events.txt`.
+
+## Da fare (sessioni future)
+- [ ] **Fase 5 — GenogramCanvas + gesture** (drag/pan/zoom/box-select in un hook o
+      componente). DECISIONE: rimandata deliberatamente — il codice è fortemente
+      accoppiato (~40 tra stati e ref condivisi) e il rischio di regressioni sulle
+      interazioni non è verificabile senza test manuali sull'app. Farla in una
+      sessione dedicata con verifica interattiva (npm run dev) passo-passo.
+- [ ] **Simboli (seconda tranche, sforzo M)**: immigrazione/trasferimento con anno
+      (freccia esterna), PMA/donatore/surrogata, distinzione alcol vs droghe
+      (richiede scelta clinica: oggi `substanceAbuse` è generico — decidere se
+      sdoppiare il flag o aggiungere un sottotipo).
+- [ ] **Layout C&M v2 (rifiniture)**: centratura per-unione nelle catene multi-matrimonio
+      (oggi la catena si centra sull'insieme dei figli); campo opzionale `birthOrder`
+      su GenNode per ordinare fratelli senza data; campo `startDate` sugli edge di
+      coppia per l'ordine cronologico esplicito dei matrimoni multipli.
+- [ ] **Split cosmetico** dei cluster `components/*.tsx` in file singoli (bassa priorità).
+- [ ] **CI**: aggiungere un workflow GitHub Actions che esegua i tre gate.
 
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.
 - Tipi puri con `import type` (verbatimModuleSyntax attivo).
-- Lo stato resta in GenogramApp e scende via props (niente context nuovi per ora).
+- Lo stato resta in GenogramApp e scende via props/hook dedicati.
+- Nuovi campi su GenNode/RelationEdge sempre opzionali (retrocompatibilità dati).

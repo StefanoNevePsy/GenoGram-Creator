@@ -32,7 +32,9 @@ import { Legend, RelationshipSelector, ConnectionLine, NodeShape, SelectionTrans
 import { QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector, StickyNotePropertiesPanel } from './components/panels';
 import { ReportModal, SettingsModal, InstructionsModal, StyleDesignerModal, ReportConfigModal } from './components/modals';
 import { parseFirebaseConfig } from './services/firebase';
-import { readLocalIndex, readFullGenogram, saveDraftAndIndex, removeLocalGenogram, persistImportedLocally, downloadJsonFile } from './services/storage';
+import { useGenogramHistory } from './hooks/useHistory';
+import { useAutosave } from './hooks/useAutosave';
+import { readLocalIndex, readFullGenogram, removeLocalGenogram, persistImportedLocally, downloadJsonFile } from './services/storage';
 
 
 
@@ -326,75 +328,10 @@ export default function GenogramApp() {
     const [groups, setGroups] = useState<NodeGroup[]>([]);
     const [customPresets, setCustomPresets] = useState<CustomPreset[]>([]);
 
-    const [history, setHistory] = useState<string[]>([]);
-    const [historyIndex, setHistoryIndex] = useState(-1);
-    // Indice sincrono: evita la corruzione della history quando pushState
-    // viene chiamato più volte nello stesso tick (closure stantia su historyIndex)
-    const historyIndexRef = useRef(historyIndex);
-
-    const pushState = useCallback((n: GenNode[], e: RelationEdge[], g: NodeGroup[], s: any[]) => {
-        const stateStr = JSON.stringify({ nodes: n, edges: e, groups: g, stickyNotes: s });
-        const newIndex = historyIndexRef.current + 1;
-        setHistory(prev => [...prev.slice(0, newIndex), stateStr]);
-        historyIndexRef.current = newIndex;
-        setHistoryIndex(newIndex);
-    }, []);
-
-    const updateNodes = (newNodes: GenNode[] | ((prev: GenNode[]) => GenNode[])) => {
-        const resolved = typeof newNodes === 'function' ? newNodes(nodes) : newNodes;
-        setNodes(resolved);
-        pushState(resolved, edges, groups, stickyNotes);
-    };
-    const updateEdges = (newEdges: RelationEdge[] | ((prev: RelationEdge[]) => RelationEdge[])) => {
-        const resolved = typeof newEdges === 'function' ? newEdges(edges) : newEdges;
-        setEdges(resolved);
-        pushState(nodes, resolved, groups, stickyNotes);
-    };
-    const updateGroups = (newGroups: NodeGroup[] | ((prev: NodeGroup[]) => NodeGroup[])) => {
-        const resolved = typeof newGroups === 'function' ? newGroups(groups) : newGroups;
-        setGroups(resolved);
-        pushState(nodes, edges, resolved, stickyNotes);
-    };
-    // Helper rapido per aggiornare tutto (inclusi post-it)
-    const updateAllWithNotes = (n: GenNode[], e: RelationEdge[], g: NodeGroup[], s: any[]) => {
-        setNodes(n); setEdges(e); setGroups(g); setStickyNotes(s);
-        pushState(n, e, g, s);
-    };
-
-    // --- AGGIUNGI QUESTO BLOCCO MANCANTE ---
-    // Serve perché molte funzioni (come addSpouse, delete) chiamano updateAll
-    const updateAll = (n: GenNode[], e: RelationEdge[], g: NodeGroup[], s?: any[]) => {
-        // Se vengono passate nuove note usale, altrimenti mantieni quelle attuali
-        const notesToUse = s || stickyNotes;
-        updateAllWithNotes(n, e, g, notesToUse);
-    };
-    // ---------------------------------------
-
-    const handleUndo = () => {
-        if (historyIndexRef.current > 0) {
-            const prevIdx = historyIndexRef.current - 1;
-            const state = JSON.parse(history[prevIdx]);
-            setNodes(state.nodes);
-            setEdges(state.edges);
-            setGroups(state.groups);
-            setStickyNotes(state.stickyNotes || []);
-            historyIndexRef.current = prevIdx;
-            setHistoryIndex(prevIdx);
-        }
-    };
-
-    const handleRedo = () => {
-        if (historyIndexRef.current < history.length - 1) {
-            const nextIdx = historyIndexRef.current + 1;
-            const state = JSON.parse(history[nextIdx]);
-            setNodes(state.nodes);
-            setEdges(state.edges);
-            setGroups(state.groups);
-            setStickyNotes(state.stickyNotes || []);
-            historyIndexRef.current = nextIdx;
-            setHistoryIndex(nextIdx);
-        }
-    };
+    const {
+        history, historyIndex, pushState, updateNodes, updateEdges, updateGroups,
+        updateAllWithNotes, updateAll, handleUndo, handleRedo, resetHistory
+    } = useGenogramHistory({ nodes, setNodes, edges, setEdges, groups, setGroups, stickyNotes, setStickyNotes });
 
     useEffect(() => {
         if (history.length === 0 && view === 'editor') {
@@ -504,56 +441,8 @@ export default function GenogramApp() {
     }, [goBack]);
 
 
-    // 2. AUTOSAVE INTELLIGENTE (Unico effect unificato: localStorage + Firebase)
-    useEffect(() => {
-        if (view !== 'editor' || !currentGenId) return;
-
-        // Non salvare grafi vuoti al primo avvio
-        if (nodes.length === 0 && edges.length === 0 && historyIndex <= 0) return;
-
-        // Se è un aggiornamento remoto, non ri-salvare (evita loop)
-        if (isRemoteUpdate.current) {
-            isRemoteUpdate.current = false;
-            return;
-        }
-
-        const timer = setTimeout(async () => {
-            const dataToSave = {
-                id: currentGenId,
-                title: metaTitle,
-                category: metaCategory,
-                lastModified: Date.now(),
-                data: { nodes, edges, groups, presets: customPresets, stickyNotes }
-            };
-            // Il round-trip JSON rimuove le chiavi con valore undefined (Firestore le rifiuta)
-            const serialized = JSON.stringify(dataToSave);
-            const sanitized = JSON.parse(serialized);
-
-            // 1-2. Salvataggio locale (draft completo + indice metadati), quota-safe
-            saveDraftAndIndex({ id: currentGenId, title: metaTitle, category: metaCategory, lastModified: dataToSave.lastModified }, serialized);
-
-            // 3. Salva su Firebase se online
-            if (user && db) {
-                const pathPart = customUser ? customUser : user.uid;
-                if (!pathPart) { setSyncStatus('error'); return; }
-
-                setSyncStatus('syncing');
-                try {
-                    const docRef = doc(db, 'artifacts', appId, 'users', pathPart, 'genograms', currentGenId);
-                    await setDoc(docRef, sanitized, { merge: true });
-                    setSyncStatus('synced');
-                } catch (err) {
-                    console.error("Errore Salvataggio:", err);
-                    setSyncStatus('error');
-                }
-            } else {
-                setSyncStatus('offline');
-            }
-        }, 1500);
-
-        return () => clearTimeout(timer);
-
-    }, [nodes, edges, groups, stickyNotes, metaTitle, metaCategory, customPresets, customUser, user, db, view, currentGenId]);
+    // 2. AUTOSAVE INTELLIGENTE (localStorage + Firebase) — vedi hooks/useAutosave
+    useAutosave({ view, currentGenId, metaTitle, metaCategory, nodes, edges, groups, stickyNotes, customPresets, historyIndex, isRemoteUpdate, user, db, appId, customUser, setSyncStatus });
 
     // Shortcut "i" per legenda
     useEffect(() => {
@@ -1464,16 +1353,7 @@ export default function GenogramApp() {
         setGroups(newGroups);
         setStickyNotes(newNotes); // <--- NUOVO
 
-        setHistory([]);
-        setHistoryIndex(-1);
-        historyIndexRef.current = -1;
-        setTimeout(() => {
-            // Includi le note nello stato iniziale della storia
-            const initialState = JSON.stringify({ nodes: newNodes, edges: newEdges, groups: newGroups, stickyNotes: newNotes });
-            setHistory([initialState]);
-            setHistoryIndex(0);
-            historyIndexRef.current = 0;
-        }, 0);
+        resetHistory({ nodes: newNodes, edges: newEdges, groups: newGroups, stickyNotes: newNotes });
     };
 
     const handleNewGenogram = () => {
