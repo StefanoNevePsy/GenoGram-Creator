@@ -14,9 +14,23 @@ export interface GenNode {
 export interface RelationEdge { id: string; fromId: string; toId: string; type: string; color?: string; lineStyle?: string; decorator?: string; label: string; notes: NoteItem[]; fromAnchor?: number; toAnchor?: number; }
 export interface NodeGroup { id: string; memberIds: string[]; type: 'household' | 'subsystem'; label: string; color: string; notes: NoteItem[]; labelPos?: { x: number, y: number }; customPadding?: number; showLabel?: boolean; }
 export interface CustomPreset { id: string; name: string; type: 'relationship'; config: { color: string; lineStyle: string; renderType: string; decorator: string; } }
-export interface GenogramMeta { id: string; title: string; category: string; lastModified: number; data: { nodes: GenNode[]; edges: RelationEdge[]; groups: NodeGroup[]; presets?: CustomPreset[]; stickyNotes?: any[]; } }
+export interface GenogramMeta { id: string; title: string; category: string; lastModified: number; data: { nodes: GenNode[]; edges: RelationEdge[]; groups: NodeGroup[]; presets?: CustomPreset[]; stickyNotes?: any[]; structuralMaps?: StructuralMap[]; } }
 // --- AGGIUNGI SOTTO GLI ALTRI INTERFACE ---
 // Modifica l'interfaccia esistente
+// --- MAPPE STRUTTURALI (Minuchin) ---
+export type MinuchinRelationType = 'alliance' | 'overinvolvement' | 'conflict' | 'coalition' | 'detouring';
+export type BoundaryStyle = 'clear' | 'diffuse' | 'rigid' | 'none';
+export interface MinuchinRelation { id: string; fromId: string; toId: string; type: MinuchinRelationType; thirdId?: string; }
+export interface StructuralMap {
+    id: string;
+    label: string;
+    memberIds: string[];
+    positions: Record<string, { x: number, level: number }>;
+    boundaries: Record<number, BoundaryStyle>; // stile del confine sotto ogni livello
+    relations: MinuchinRelation[];
+    notes: NoteItem[];
+}
+
 export interface StickyNoteData {
     id: string;
     x: number;

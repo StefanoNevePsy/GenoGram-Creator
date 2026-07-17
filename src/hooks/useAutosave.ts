@@ -6,7 +6,7 @@
 import { useEffect } from 'react';
 import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
-import type { GenNode, RelationEdge, NodeGroup, StickyNoteData, CustomPreset } from '../types';
+import type { GenNode, RelationEdge, NodeGroup, StickyNoteData, StructuralMap, CustomPreset } from '../types';
 import { saveDraftAndIndex } from '../services/storage';
 
 export type SyncStatus = 'synced' | 'syncing' | 'error' | 'offline';
@@ -17,7 +17,7 @@ interface AutosaveDeps {
     metaTitle: string;
     metaCategory: string;
     nodes: GenNode[]; edges: RelationEdge[]; groups: NodeGroup[];
-    stickyNotes: StickyNoteData[]; customPresets: CustomPreset[];
+    stickyNotes: StickyNoteData[]; structuralMaps: StructuralMap[]; customPresets: CustomPreset[];
     historyIndex: number;
     isRemoteUpdate: MutableRefObject<boolean>;
     user: any; db: any; appId: string; customUser: string;
@@ -25,7 +25,7 @@ interface AutosaveDeps {
 }
 
 export const useAutosave = ({
-    view, currentGenId, metaTitle, metaCategory, nodes, edges, groups, stickyNotes,
+    view, currentGenId, metaTitle, metaCategory, nodes, edges, groups, stickyNotes, structuralMaps,
     customPresets, historyIndex, isRemoteUpdate, user, db, appId, customUser, setSyncStatus
 }: AutosaveDeps) => {
     useEffect(() => {
@@ -46,7 +46,7 @@ export const useAutosave = ({
                 title: metaTitle,
                 category: metaCategory,
                 lastModified: Date.now(),
-                data: { nodes, edges, groups, presets: customPresets, stickyNotes }
+                data: { nodes, edges, groups, presets: customPresets, stickyNotes, structuralMaps }
             };
             const serialized = JSON.stringify(dataToSave);
             const sanitized = JSON.parse(serialized);
@@ -73,5 +73,5 @@ export const useAutosave = ({
 
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [nodes, edges, groups, stickyNotes, metaTitle, metaCategory, customPresets, customUser, user, db, view, currentGenId]);
+    }, [nodes, edges, groups, stickyNotes, structuralMaps, metaTitle, metaCategory, customPresets, customUser, user, db, view, currentGenId]);
 };

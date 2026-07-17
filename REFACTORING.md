@@ -42,7 +42,18 @@ references) — non usarlo come verifica.
       conviventi. Tutti i flag nuovi sono opzionali → retrocompatibili coi dati salvati.
 - [x] **Pulizia** — eliminati `genogramConfig.ts`, `fix*.cjs`, `events.txt`.
 
+- [x] **Mappe strutturali Minuchin** (`components/minuchin.tsx` + tipi in `types.ts`):
+      manager (bottone LayoutGrid in toolbar) + editor a livelli gerarchici con
+      confini cliccabili (chiaro/diffuso/rigido), relazioni (alleanza, invischiamento,
+      conflitto, coalizione A+B vs C, deviazione), seed automatico dalla selezione
+      (traduzione fusione→invischiamento, ostilità→conflitto, armonia→alleanza),
+      export PNG. Le mappe vivono in `data.structuralMaps` → autosave/sync/backup
+      inclusi. Verificato end-to-end con Playwright (8 passi, 0 errori console).
+
 ## Da fare (sessioni future)
+- [ ] **Minuchin v2 (idee)**: overlay Minuchin sul canvas del genogramma (toggle);
+      mappe multiple T0/T1 con vista confronto; creazione da gruppo household;
+      inclusione delle mappe nel report clinico stampabile.
 - [ ] **Fase 5 — GenogramCanvas + gesture** (drag/pan/zoom/box-select in un hook o
       componente). DECISIONE: rimandata deliberatamente — il codice è fortemente
       accoppiato (~40 tra stati e ref condivisi) e il rischio di regressioni sulle
@@ -57,7 +68,7 @@ references) — non usarlo come verifica.
       su GenNode per ordinare fratelli senza data; campo `startDate` sugli edge di
       coppia per l'ordine cronologico esplicito dei matrimoni multipli.
 - [ ] **Split cosmetico** dei cluster `components/*.tsx` in file singoli (bassa priorità).
-- [ ] **CI**: aggiungere un workflow GitHub Actions che esegua i tre gate.
+- [x] **CI**: workflow GitHub Actions (`.github/workflows/ci.yml`) con i tre gate.
 
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.

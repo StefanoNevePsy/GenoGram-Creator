@@ -23,7 +23,7 @@ import type { CategoryDef } from './config/categories';
 import { ICON_MAP, DEFAULT_CATEGORIES } from './config/categories';
 import { NOTE_BG_PALETTES, NOTE_TEXT_COLORS, NOTE_FONTS, PRESET_THEMES } from './config/themes';
 import { GRID_SIZE, SNAP_SIZE, CANVAS_SIZE, CENTER_POS, NODE_WIDTH, NODE_HEIGHT, MARRIAGE_BAR_Y } from './config/constants';
-import type { Gender, GenNode, RelationEdge, NodeGroup, CustomPreset, GenogramMeta, StickyNoteData, ReportOptions } from './types';
+import type { Gender, GenNode, RelationEdge, NodeGroup, CustomPreset, GenogramMeta, StickyNoteData, StructuralMap, ReportOptions } from './types';
 import { calculateAge, calculateAgeAtDeath, extractYear } from './utils/dates';
 import { generateId, findMarriageEdge } from './utils/genogram';
 import { computeGenogramLayout } from './layout/autoLayout';
@@ -34,6 +34,7 @@ import { ReportModal, SettingsModal, InstructionsModal, StyleDesignerModal, Repo
 import { parseFirebaseConfig } from './services/firebase';
 import { useGenogramHistory } from './hooks/useHistory';
 import { useAutosave } from './hooks/useAutosave';
+import { MinuchinManager } from './components/minuchin';
 import { readLocalIndex, readFullGenogram, removeLocalGenogram, persistImportedLocally, downloadJsonFile } from './services/storage';
 
 
@@ -49,6 +50,8 @@ export default function GenogramApp() {
     const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
     const [stickyNotes, setStickyNotes] = useState<StickyNoteData[]>([]);
+    const [structuralMaps, setStructuralMaps] = useState<StructuralMap[]>([]);
+    const [showMinuchin, setShowMinuchin] = useState(false);
     const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
     const [showReportConfig, setShowReportConfig] = useState(false);
 
@@ -442,7 +445,7 @@ export default function GenogramApp() {
 
 
     // 2. AUTOSAVE INTELLIGENTE (localStorage + Firebase) — vedi hooks/useAutosave
-    useAutosave({ view, currentGenId, metaTitle, metaCategory, nodes, edges, groups, stickyNotes, customPresets, historyIndex, isRemoteUpdate, user, db, appId, customUser, setSyncStatus });
+    useAutosave({ view, currentGenId, metaTitle, metaCategory, nodes, edges, groups, stickyNotes, structuralMaps, customPresets, historyIndex, isRemoteUpdate, user, db, appId, customUser, setSyncStatus });
 
     // Shortcut "i" per legenda
     useEffect(() => {
@@ -1347,11 +1350,12 @@ export default function GenogramApp() {
     // --- 1. GESTIONE STATO CORRETTA (FIX PER DATI FANTASMA) ---
 
     // Funzione helper per resettare pulito lo stato e la storia
-    const resetEditorState = (newNodes: GenNode[], newEdges: RelationEdge[], newGroups: NodeGroup[], newNotes: StickyNoteData[] = []) => {
+    const resetEditorState = (newNodes: GenNode[], newEdges: RelationEdge[], newGroups: NodeGroup[], newNotes: StickyNoteData[] = [], newMaps: StructuralMap[] = []) => {
         setNodes(newNodes);
         setEdges(newEdges);
         setGroups(newGroups);
         setStickyNotes(newNotes); // <--- NUOVO
+        setStructuralMaps(newMaps);
 
         resetHistory({ nodes: newNodes, edges: newEdges, groups: newGroups, stickyNotes: newNotes });
     };
@@ -2283,7 +2287,7 @@ export default function GenogramApp() {
                                             setMetaTitle(g.title);
                                             setMetaCategory(g.category);
                                             setCustomPresets(g.data?.presets || []);
-                                            resetEditorState(g.data?.nodes || [], g.data?.edges || [], g.data?.groups || [], g.data?.stickyNotes || []);
+                                            resetEditorState(g.data?.nodes || [], g.data?.edges || [], g.data?.groups || [], g.data?.stickyNotes || [], g.data?.structuralMaps || []);
                                             setView('editor');
                                         }} className="group relative theme-panel rounded-xl shadow-sm hover:shadow-md transition-all border theme-border cursor-pointer overflow-hidden flex flex-col h-48">
                                             <div className="absolute top-0 left-0 w-1.5 h-full" style={{ backgroundColor: catDef.color }} />
@@ -2362,6 +2366,7 @@ export default function GenogramApp() {
 
             {showDesigner && <StyleDesignerModal onClose={() => setShowDesigner(false)} onSave={(p) => setCustomPresets(prev => [...prev, p])} />}
             {showReport && <ReportModal onClose={() => setShowReport(false)} nodes={nodes} edges={edges} groups={groups} />}
+            {showMinuchin && <MinuchinManager maps={structuralMaps} nodes={nodes} edges={edges} selectedNodeIds={selectedNodeIds} darkMode={darkMode} onChange={setStructuralMaps} onClose={() => setShowMinuchin(false)} />}
             {/* --- INCOLLA QUI IL BLOCCO SPOSTATO --- */}
             {showReportConfig && (
                 <ReportConfigModal
@@ -2424,6 +2429,7 @@ export default function GenogramApp() {
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
                         <button onClick={autoLayout} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} title="Auto-Layout"><Network size={18} /></button>
                         <button onClick={autoLayoutCM} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} title="Layout Genogramma (Carter & McGoldrick)"><GitBranch size={18} /></button>
+                        <button onClick={() => setShowMinuchin(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} title="Mappe Strutturali (Minuchin)"><LayoutGrid size={18} /></button>
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
 
                         <button onClick={() => alignNodes('h')} className="p-1.5 theme-hover rounded shrink-0" title="Allinea Orizzontale"><AlignJustify size={18} /></button>
