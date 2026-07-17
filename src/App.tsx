@@ -32,6 +32,7 @@ import { Legend, RelationshipSelector, ConnectionLine, NodeShape, SelectionTrans
 import { QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector, StickyNotePropertiesPanel } from './components/panels';
 import { ReportModal, SettingsModal, InstructionsModal, StyleDesignerModal, ReportConfigModal } from './components/modals';
 import { parseFirebaseConfig } from './services/firebase';
+import { readLocalIndex, readFullGenogram, saveDraftAndIndex, removeLocalGenogram, persistImportedLocally, downloadJsonFile } from './services/storage';
 
 
 
@@ -528,26 +529,8 @@ export default function GenogramApp() {
             const serialized = JSON.stringify(dataToSave);
             const sanitized = JSON.parse(serialized);
 
-            // 1-2. Salvataggio locale protetto: un QuotaExceededError non deve bloccare il sync cloud
-            try {
-                // Draft locale (persistenza offline)
-                localStorage.setItem(`genopro_data_${currentGenId}`, serialized);
-
-                // Indice locale (per la dashboard offline): solo metadati, i dati completi
-                // sono già in genopro_data_<id> — evita di raddoppiare l'occupazione
-                const localIndexStr = localStorage.getItem('genopro_local_index');
-                let localList: GenogramMeta[] = localIndexStr ? JSON.parse(localIndexStr) : [];
-                const metaEntry = { id: currentGenId, title: metaTitle, category: metaCategory, lastModified: dataToSave.lastModified } as GenogramMeta;
-                const existingIdx = localList.findIndex((x) => x.id === currentGenId);
-                if (existingIdx >= 0) {
-                    localList[existingIdx] = metaEntry;
-                } else {
-                    localList.push(metaEntry);
-                }
-                localStorage.setItem('genopro_local_index', JSON.stringify(localList));
-            } catch (err) {
-                console.error("Errore salvataggio locale (quota?):", err);
-            }
+            // 1-2. Salvataggio locale (draft completo + indice metadati), quota-safe
+            saveDraftAndIndex({ id: currentGenId, title: metaTitle, category: metaCategory, lastModified: dataToSave.lastModified }, serialized);
 
             // 3. Salva su Firebase se online
             if (user && db) {
@@ -1428,13 +1411,8 @@ export default function GenogramApp() {
     }, [auth]);
     // Caricamento Lista Genogrammi (Ibrido)
     useEffect(() => {
-        // 1. Carica sempre indice locale arricchito
-        const localIndexStr = localStorage.getItem('genopro_local_index');
-        const localList: GenogramMeta[] = localIndexStr ? JSON.parse(localIndexStr) : [];
-        const enrichedLocalList = localList.map(g => {
-            try { return JSON.parse(localStorage.getItem(`genopro_data_${g.id}`) || JSON.stringify(g)); }
-            catch { return g; }
-        });
+        // 1. Carica sempre indice locale arricchito con i draft completi
+        const enrichedLocalList = readLocalIndex().map(readFullGenogram);
 
         // Se offline, mostra solo locali
         if (!user || !db) {
@@ -2268,21 +2246,8 @@ export default function GenogramApp() {
     // Persiste i genogrammi importati (localStorage + indice + cloud best-effort):
     // senza questo, l'import spariva al primo reload o refresh remoto
     const persistImportedGenograms = async (items: GenogramMeta[]) => {
-        const existingIds = new Set(genograms.map(g => g.id));
-        const imported: GenogramMeta[] = items
-            .filter(it => it && it.id && it.data)
-            .map(it => existingIds.has(it.id) ? { ...it, id: generateId(), title: `${it.title} (importato)` } : it);
+        const imported = persistImportedLocally(items, new Set(genograms.map(g => g.id)));
         if (imported.length === 0) return 0;
-
-        try {
-            const idxStr = localStorage.getItem('genopro_local_index');
-            const idx: GenogramMeta[] = idxStr ? JSON.parse(idxStr) : [];
-            imported.forEach(g => {
-                localStorage.setItem(`genopro_data_${g.id}`, JSON.stringify(g));
-                idx.push({ id: g.id, title: g.title, category: g.category, lastModified: g.lastModified || Date.now() } as GenogramMeta);
-            });
-            localStorage.setItem('genopro_local_index', JSON.stringify(idx));
-        } catch (err) { console.error("Errore persistenza import:", err); }
 
         if (user && db) {
             const pathPart = customUser ? customUser : user.uid;
@@ -2312,32 +2277,17 @@ export default function GenogramApp() {
         reader.readAsText(file);
         e.target.value = ''; // permette di reimportare lo stesso file
     };
-    const handleExportBackup = () => { const blob = new Blob([JSON.stringify(genograms)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_genopro.json`; a.click(); };
-
-    // Recupera il genogramma completo: l'indice locale contiene solo metadati
-    const getFullGenogram = (g: GenogramMeta): GenogramMeta => {
-        try {
-            const s = localStorage.getItem(`genopro_data_${g.id}`);
-            if (s) return JSON.parse(s);
-        } catch { /* usa la versione in stato */ }
-        return g;
-    };
+    const handleExportBackup = () => downloadJsonFile(genograms, 'backup_genopro.json');
 
     // Esporta un singolo genogramma come file JSON (condivisibile con colleghi)
     const exportSingleGenogram = (g: GenogramMeta) => {
-        const full = getFullGenogram(g);
-        const blob = new Blob([JSON.stringify(full)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${(full.title || 'genogramma').replace(/[^\w\s-]/g, '')}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        const full = readFullGenogram(g);
+        downloadJsonFile(full, `${(full.title || 'genogramma').replace(/[^\w\s-]/g, '')}.json`);
     };
 
     // Duplica un genogramma (es. snapshot per confronto tra sedute)
     const duplicateGenogram = (g: GenogramMeta) => {
-        const full = getFullGenogram(g);
+        const full = readFullGenogram(g);
         const copy: GenogramMeta = { ...full, id: generateId(), title: `${full.title} (copia)`, lastModified: Date.now() };
         persistImportedGenograms([copy]);
     };
@@ -2469,12 +2419,7 @@ export default function GenogramApp() {
                                                             e.stopPropagation();
                                                             if (confirm("Eliminare?")) {
                                                                 if (db) deleteDoc(doc(db, 'artifacts', appId, 'users', customUser || user?.uid || 'anon', 'genograms', g.id));
-                                                                localStorage.removeItem(`genopro_data_${g.id}`);
-                                                                const idxStr = localStorage.getItem('genopro_local_index');
-                                                                if (idxStr) {
-                                                                    const lst = JSON.parse(idxStr).filter((x: any) => x.id !== g.id);
-                                                                    localStorage.setItem('genopro_local_index', JSON.stringify(lst));
-                                                                }
+                                                                removeLocalGenogram(g.id);
                                                                 setGenograms(prev => prev.filter(x => x.id !== g.id));
                                                             }
                                                         }} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
