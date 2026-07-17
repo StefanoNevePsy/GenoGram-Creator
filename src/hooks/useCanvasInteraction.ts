@@ -144,8 +144,15 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
         // Reset timer precedenti
         if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
 
-        // NOTA: La logica del tasto S Pen ora è gestita globalmente dal useEffect "handleGlobalPenButton".
-        // Qui gestiamo solo l'interazione standard (Pan, Selezione) e il Long Press col dito.
+        // TASTO DESTRO / BARREL S-PEN (web): menu contestuale, MAI drag/box-select.
+        // Senza questo guard partiva una box-select fantasma in conflitto col menu
+        // (su Android il tasto arriva anche via evento nativo "sPenNativeEvent").
+        if (e.button === 2 || e.button === 5 || (e.buttons & 2) === 2) {
+            e.preventDefault();
+            const { x: gx, y: gy } = getGraphCoordinates(e.clientX, e.clientY);
+            setContextMenu({ x: e.clientX, y: e.clientY, gx, gy });
+            return;
+        }
 
         // 2. LOGICA DITO (Long Press Timer)
         if (e.pointerType === 'touch' && e.isPrimary) {

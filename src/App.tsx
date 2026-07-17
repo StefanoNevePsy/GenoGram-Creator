@@ -146,13 +146,16 @@ export default function GenogramApp() {
     useEffect(() => {
         // Funzione che riceve il segnale da Java
         const handleNativeSPen = (e: any) => {
-            // L'evento arriva come CustomEvent
-            // Verifica se è un'azione "down" o un click
+            // L'evento arriva come CustomEvent dal bridge Capacitor (senza coordinate)
             console.log("S PEN NATIVE:", e);
 
-            // Esegui la tua logica (Apri Menu)
-            // Poiché questo evento non ha coordinate del mouse (arriva da Java),
-            // usiamo l'ultima posizione nota del cursore (cursorRef)
+            // Annulla drag e long-press in corso: senza questo, premere il tasto
+            // penna durante un trascinamento lasciava una box-select fantasma
+            if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+            if (dragRef.current) dragRef.current = { ...dragRef.current, active: false };
+            setDragState(null);
+
+            // Usa l'ultima posizione nota del puntatore (aggiornata via pointermove)
             const { clientX, clientY } = cursorRef.current;
             const { x, y } = getGraphCoordinates(clientX, clientY);
 
@@ -167,13 +170,15 @@ export default function GenogramApp() {
         };
     }, []);
 
-    // 1. Hook per tracciare il mouse ovunque nella finestra
+    // 1. Hook per tracciare il puntatore ovunque nella finestra.
+    // pointermove (non mousemove): copre anche penna in hover e touch — la
+    // posizione serve al menu S-Pen nativo, che arriva da Java senza coordinate.
     useEffect(() => {
-        const handleGlobalMouseMove = (e: MouseEvent) => {
+        const handleGlobalMouseMove = (e: PointerEvent) => {
             cursorRef.current = { clientX: e.clientX, clientY: e.clientY };
         };
-        window.addEventListener('mousemove', handleGlobalMouseMove);
-        return () => window.removeEventListener('mousemove', handleGlobalMouseMove);
+        window.addEventListener('pointermove', handleGlobalMouseMove);
+        return () => window.removeEventListener('pointermove', handleGlobalMouseMove);
     }, []);
 
     // 2. Funzione Helper per calcolare la posizione nel grafico
