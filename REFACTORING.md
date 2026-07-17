@@ -14,12 +14,13 @@ senza NUOVI errori (vedi nota sotto).
   - `src/utils/genogram.ts` (generateId, findMarriageEdge, getMarriageBarY)
   - `src/utils/geometry.ts` (hull, intersezioni, blob organico, zigzag…)
 
+- [x] **Layout C&M** (`src/layout/autoLayout.ts`): motore deterministico a blocchi,
+      integrato come bottone GitBranch accanto al layout fisico V33. Collaudato su
+      fixture (3 generazioni con nonni entrambi i lati; divorzio+risposato con figli
+      di due letti; gemelli; nodo isolato ignorato). Le famiglie acquisite si
+      agganciano per riga con spostamento minimo verso il coniuge.
+
 ## Da fare (in ordine)
-- [ ] **Layout C&M** (`src/layout/autoLayout.ts`): motore deterministico a blocchi
-      (tidy-tree esteso alle coppie). Regole: generazioni su righe; fratelli
-      sx→dx per età (primogenito a sx); M a sx nella coppia; matrimoni multipli
-      cronologici con persona condivisa al centro; genitori centrati sui figli;
-      IP centrato. Integrare come bottone separato accanto al layout fisico V33.
 - [ ] **Fase 2** — `services/firebase.ts` (init + parseFirebaseConfig),
       `services/storage.ts` (indice locale, draft, persistImportedGenograms,
       getFullGenogram, export/import). Attenzione: oggi vivono nel componente.

@@ -26,6 +26,7 @@ import { GRID_SIZE, SNAP_SIZE, CANVAS_SIZE, CENTER_POS, NODE_WIDTH, NODE_HEIGHT,
 import type { Gender, NoteItem, GenNode, RelationEdge, NodeGroup, CustomPreset, GenogramMeta, StickyNoteData, ReportOptions } from './types';
 import { parseDate, calculateAge, calculateAgeAtDeath, extractYear } from './utils/dates';
 import { generateId, findMarriageEdge, getMarriageBarY } from './utils/genogram';
+import { computeGenogramLayout } from './layout/autoLayout';
 import { getGroupBounds, getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
 
 
@@ -3724,6 +3725,15 @@ export default function GenogramApp() {
         updateNodes(allNodes);
     };
 
+    // Layout Genogramma secondo Carter & McGoldrick (deterministico)
+    const autoLayoutCM = () => {
+        const { positions, warnings } = computeGenogramLayout(nodes, edges, { centerX: CENTER_POS, centerY: CENTER_POS, snap: SNAP_SIZE });
+        if (positions.size === 0) { alert("Nessuna struttura familiare da disporre (servono relazioni di coppia o figli)."); return; }
+        updateNodes(nodes.map(n => { const p = positions.get(n.id); return p ? { ...n, x: p.x, y: p.y } : n; }));
+        if (warnings.length) console.warn('Layout C&M:', warnings);
+        setTimeout(fitView, 60);
+    };
+
     const centerView = () => { setZoom(1); if (containerRef.current) { containerRef.current.scrollTo({ left: CENTER_POS - containerRef.current.clientWidth / 2, top: CENTER_POS - containerRef.current.clientHeight / 2, behavior: 'smooth' }); } };
 
     // Zoom-to-fit: inquadra tutto il contenuto con un click
@@ -4497,6 +4507,7 @@ export default function GenogramApp() {
 
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
                         <button onClick={autoLayout} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} title="Auto-Layout"><Network size={18} /></button>
+                        <button onClick={autoLayoutCM} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} title="Layout Genogramma (Carter & McGoldrick)"><GitBranch size={18} /></button>
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
 
                         <button onClick={() => alignNodes('h')} className="p-1.5 theme-hover rounded shrink-0" title="Allinea Orizzontale"><AlignJustify size={18} /></button>
