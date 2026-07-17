@@ -97,7 +97,6 @@ export const computeGenogramLayout = (
             const lo = ga < gb ? e.fromId : e.toId;
             const hi = Math.max(ga, gb);
             if (!(parentsOf.get(lo) || []).length) { gen.set(lo, hi); changed = true; }
-            else if (iter === 9) warnings.push(`Generazioni incompatibili tra coniugi (${nodeById.get(e.fromId)?.name} / ${nodeById.get(e.toId)?.name})`);
         });
         parentsOf.forEach((ps, c) => {
             if (!involved.has(c)) return;
@@ -106,6 +105,17 @@ export const computeGenogramLayout = (
         });
         if (!changed) break;
     }
+    // Coppie rimaste su righe diverse (es. coniuge che è anche antenato): avvisa una volta
+    const genWarned = new Set<string>();
+    coupleEdges.forEach(e => {
+        if (gen.get(e.fromId) !== gen.get(e.toId)) {
+            const key = [e.fromId, e.toId].sort().join('|');
+            if (!genWarned.has(key)) {
+                genWarned.add(key);
+                warnings.push(`Generazioni incompatibili tra coniugi (${nodeById.get(e.fromId)?.name} / ${nodeById.get(e.toId)?.name})`);
+            }
+        }
+    });
 
     // --- 3. CATENE CONIUGALI (blocchi atomici per generazione) ---
     // Adiacenza tra partner della stessa generazione, ordinata cronologicamente (indice edge)

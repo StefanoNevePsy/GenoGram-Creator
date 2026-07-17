@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, Check, X, Edit3, ChevronDown, Heart, Users, Waypoints } from 'lucide-react';
+import { Plus, ChevronDown, Heart, Users, Waypoints } from 'lucide-react';
 import type { GenNode, RelationEdge, StickyNoteData } from '../types';
 import { BASE_REL_CONFIG, RELATION_CATEGORIES } from '../config/relationships';
-import { NODE_WIDTH, NODE_HEIGHT, NODE_RADIUS, MARRIAGE_BAR_Y } from '../config/constants';
+import { NODE_WIDTH, NODE_HEIGHT, NODE_RADIUS } from '../config/constants';
 import { parseDate, calculateAge, calculateAgeAtDeath } from '../utils/dates';
 import { getMarriageBarY } from '../utils/genogram';
 import { getZigZagPath } from '../utils/geometry';
@@ -335,8 +335,6 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
 
         if (renderType === 'double-arrow-inward') {
             const dx = actualEndX - start.x; const dy = actualEndY - start.y;
-            const len = Math.sqrt(dx * dx + dy * dy);
-            const ux = len > 0 ? dx / len : 1; const uy = len > 0 ? dy / len : 0;
             const ang = Math.atan2(dy, dx) * 180 / Math.PI;
             const x1 = start.x + dx * 0.33; const y1 = start.y + dy * 0.33;
             const x2 = start.x + dx * 0.67; const y2 = start.y + dy * 0.67;

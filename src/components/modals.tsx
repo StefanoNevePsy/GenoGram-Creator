@@ -1,10 +1,9 @@
 import { useState, useMemo } from 'react';
-import { X, Search, Check, Download, Upload, Database, FileText, Users, AlignJustify, ArrowDownToLine, ArrowUpToLine, Circle, CircleDashed, Cloud, Edit3, GitBranch, Grid3X3, Grip, Heart, HelpCircle, Info, LayoutGrid, MousePointer2, Network, Plus, Settings, Square, Sun, TrendingUp, UserPlus, Waypoints } from 'lucide-react';
+import { X, Search, Download, Upload, Database, FileText, Users, AlignJustify, ArrowDownToLine, ArrowUpToLine, Circle, CircleDashed, Cloud, Edit3, GitBranch, Grid3X3, Grip, Heart, HelpCircle, Info, LayoutGrid, MousePointer2, Network, Plus, Settings, Square, Sun, TrendingUp, UserPlus, Waypoints } from 'lucide-react';
 import type { GenNode, RelationEdge, NodeGroup, CustomPreset, ReportOptions } from '../types';
 import { BASE_REL_CONFIG, RELATION_CATEGORIES } from '../config/relationships';
 import { calculateAge } from '../utils/dates';
 import { generateId } from '../utils/genogram';
-import { LinePreview, RelationshipSelector } from './canvas';
 
 export const ReportModal = ({ onClose, nodes, edges, groups }: { onClose: () => void, nodes: GenNode[], edges: RelationEdge[], groups: NodeGroup[] }) => {
     const [selectedPerson, setSelectedPerson] = useState<string | null>(null);

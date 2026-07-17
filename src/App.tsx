@@ -43,7 +43,7 @@ export default function GenogramApp() {
     const containerRef = useRef<HTMLDivElement>(null);
     const cursorRef = useRef({ clientX: 0, clientY: 0 }); // Posizione mouse grezza
     const isZoomingRef = useRef(false); // <--- NUOVO REF
-    const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
     const [stickyNotes, setStickyNotes] = useState<StickyNoteData[]>([]);
     const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
@@ -254,8 +254,6 @@ export default function GenogramApp() {
     const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
     const [customUser, setCustomUser] = useState(localStorage.getItem('genopro_custom_user') || '');
     const [firebaseConfig, setFirebaseConfig] = useState(localStorage.getItem('genopro_firebase_config') || '');
-    const [touchDist, setTouchDist] = useState<number | null>(null);
-    const longPressTimer = useRef<any>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, gx: number, gy: number } | null>(null);
     const [showHelp, setShowHelp] = useState(false);
 
@@ -266,7 +264,7 @@ export default function GenogramApp() {
 
     // --- 3. DATI DASHBOARD (Quelli che mancavano) ---
     const [genograms, setGenograms] = useState<GenogramMeta[]>([]);
-    const [categories, setCategories] = useState<CategoryDef[]>(() => {
+    const [categories] = useState<CategoryDef[]>(() => {
         const saved = localStorage.getItem('genopro_categories');
         return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
     });
@@ -433,7 +431,6 @@ export default function GenogramApp() {
     const [isPanMode, setIsPanMode] = useState(false);
 
     const [dragState, setDragState] = useState<any>(null);
-    const [boxSelection, setBoxSelection] = useState<any>(null);
     const [quickMenu, setQuickMenu] = useState<{ x: number, y: number, edgeId: string, mode: 'child' | 'spouse' | 'link' | 'parents' } | null>(null);
     const [zoom, setZoom] = useState(1);
     const [exportScale, setExportScale] = useState(4);
@@ -476,7 +473,7 @@ export default function GenogramApp() {
         const initBackListener = async () => {
             // Capacitor Listener per Android
             try {
-                capHandle = await CapacitorApp.addListener('backButton', async (info) => {
+                capHandle = await CapacitorApp.addListener('backButton', async () => {
                     const handled = await goBack();
                     if (!handled) {
                         CapacitorApp.exitApp();
@@ -489,7 +486,7 @@ export default function GenogramApp() {
         initBackListener();
 
         // Listener per Web Browser
-        const handlePopState = async (e: PopStateEvent) => {
+        const handlePopState = async () => {
             const handled = await goBack();
             if (handled) {
                 // Ripristiniamo la history in modo da poter intercettare nuovamente il back
@@ -1008,7 +1005,7 @@ export default function GenogramApp() {
 
             longPressTimerRef.current = setTimeout(() => {
                 // Ferma il drag
-                dragRef.current = { ...dragRef.current, active: false };
+                if (dragRef.current) dragRef.current = { ...dragRef.current, active: false };
                 setDragState(null);
                 // Apri menu
                 const { x, y } = getGraphCoordinates(clientX, clientY);
@@ -1041,19 +1038,6 @@ export default function GenogramApp() {
         };
         setDragState({ ...dragRef.current });
         setQuickMenu(null);
-    };
-
-    const handleContextMenu = (e: React.MouseEvent) => {
-        e.preventDefault(); // Blocca menu nativo Android
-
-        // Ferma qualsiasi drag iniziato erroneamente al "down"
-        if (dragRef.current) {
-            dragRef.current.active = false;
-            setDragState(null);
-        }
-
-        const { x, y } = getGraphCoordinates(e.clientX, e.clientY);
-        setContextMenu({ x: e.clientX, y: e.clientY, gx: x, gy: y });
     };
 
     const handleNoteDown = (e: any, noteId: string) => {
@@ -1172,7 +1156,7 @@ export default function GenogramApp() {
 
             e.preventDefault(); // Evita scroll pagina durante drag attivo
 
-            const { currX, currY, startX, startY, clientStartX, clientStartY, initialScrollLeft, initialScrollTop } = dragRef.current;
+            const { startX, startY, clientStartX, clientStartY, initialScrollLeft, initialScrollTop } = dragRef.current;
             const { x, y, cx, cy } = getEventCoords(e);
 
             // Aggiorna posizione corrente nel ref
@@ -1242,15 +1226,15 @@ export default function GenogramApp() {
                 if (dragRef.current.type === 'group-padding') {
                     const dx = x - startX;
                     const dy = y - startY;
-                    const initialPad = dragRef.current.initialPadding || 20;
+                    const initialPad = dragRef.current!.initialPadding || 20;
                     const newPad = Math.max(10, initialPad + Math.max(dx, dy));
-                    setGroups(prev => prev.map(g => g.id === dragRef.current.sourceId ? { ...g, customPadding: newPad } : g));
+                    setGroups(prev => prev.map(g => g.id === dragRef.current!.sourceId ? { ...g, customPadding: newPad } : g));
                 } else if (dragRef.current.type === 'group-label') {
                     const dx = x - startX;
                     const dy = y - startY;
-                    const initial = dragRef.current.initialNodePositions?.[dragRef.current.sourceId];
+                    const initial = dragRef.current!.initialNodePositions?.[dragRef.current!.sourceId];
                     if (initial) {
-                        setGroups(prev => prev.map(g => g.id === dragRef.current.sourceId ? { ...g, labelPos: { x: initial.x + dx, y: initial.y + dy } } : g));
+                        setGroups(prev => prev.map(g => g.id === dragRef.current!.sourceId ? { ...g, labelPos: { x: initial.x + dx, y: initial.y + dy } } : g));
                     }
                 }
                 setDragState({ ...dragRef.current, currX: x, currY: y });
@@ -1481,7 +1465,7 @@ export default function GenogramApp() {
                 });
 
                 setGenograms(Array.from(mergedMap.values()));
-            }, (err) => {
+            }, () => {
                 console.error("Dashboard offline, uso cache locale");
                 setGenograms(enrichedLocalList);
             });
@@ -2199,8 +2183,6 @@ export default function GenogramApp() {
                 if (config.renderType.includes('hostile') || config.renderType.includes('triple-zigzag') || config.lineStyle === 'zigzag-thick') color = '#ef4444';
 
                 let actualEndX = 30;
-                let midX = 15;
-                let midY = 7;
 
                 const hasEndArrow = (config.renderType.includes('arrow') && !config.renderType.includes('center') && config.renderType !== 'double-arrow-inward') || config.renderType === 'triple-zigzag-center-arrow';
                 if (hasEndArrow) actualEndX -= 6;
@@ -2606,7 +2588,7 @@ export default function GenogramApp() {
                         <button onClick={createGroup} title="Gruppo" className="p-1.5 theme-hover rounded shrink-0"><Users size={20} /></button>
 
                         {/* --- CORREZIONE QUI (Rimosso il doppio <<) --- */}
-                        <button onClick={addStickyNoteAtCursor} title="Aggiungi Nota (N)" className="p-1.5 theme-hover rounded shrink-0" style={{ color: '#f59e0b' }}>
+                        <button onClick={() => addStickyNoteAtCursor()} title="Aggiungi Nota (N)" className="p-1.5 theme-hover rounded shrink-0" style={{ color: '#f59e0b' }}>
                             <StickyNote size={20} />
                         </button>
 
@@ -2763,7 +2745,7 @@ export default function GenogramApp() {
                                 {groups.map(g => {
                                     const geom = getGroupGeometry(g, nodes);
                                     if (!geom) return null;
-                                    const { d: pathD, cx, cy } = geom;
+                                    const { d: pathD, cx } = geom;
 
                                     const isSel = selectedGroupIds.includes(g.id);
                                     const gColor = (g.color === '#000000' && darkMode) ? '#ffffff' : g.color;

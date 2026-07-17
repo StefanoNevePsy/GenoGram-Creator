@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Plus, Check, X, Trash2, ChevronDown, Edit3, Sun, Moon, StickyNote } from 'lucide-react';
+import { Plus, Check, X, Trash2, Edit3, Sun, Moon, StickyNote } from 'lucide-react';
 import type { NoteItem, CustomPreset, StickyNoteData } from '../types';
 import { BASE_REL_CONFIG, RELATION_CATEGORIES } from '../config/relationships';
 import { PRESET_THEMES, NOTE_BG_PALETTES, NOTE_TEXT_PALETTES, NOTE_FONTS, PASTEL_PALETTE, VIVID_PALETTE, NEUTRAL_PALETTE } from '../config/themes';
