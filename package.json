@@ -12,7 +12,8 @@
     "electron:dev": "vite build && electron .",
     "electron:build:win": "vite build && electron-builder --win",
     "electron:build:mac": "vite build && electron-builder --mac",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "node scripts/e2e-smoke.cjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.2",

@@ -42,6 +42,11 @@ references) — non usarlo come verifica.
       conviventi. Tutti i flag nuovi sono opzionali → retrocompatibili coi dati salvati.
 - [x] **Pulizia** — eliminati `genogramConfig.ts`, `fix*.cjs`, `events.txt`.
 
+- [x] **Minuchin v2**: membri resi con i simboli reali del genogramma tramite
+      `PersonSymbol` (estratto da NodeShape, unica fonte per canvas e mappe);
+      confini VERTICALI tra sottosistemi (aggiunta da toolbar, drag, ciclo stile,
+      eliminazione); restyling completo (fasce alternate, pill, anteprime di
+      notazione in toolbar, legenda a glifi SVG, export PNG senza affordance).
 - [x] **Mappe strutturali Minuchin** (`components/minuchin.tsx` + tipi in `types.ts`):
       manager (bottone LayoutGrid in toolbar) + editor a livelli gerarchici con
       confini cliccabili (chiaro/diffuso/rigido), relazioni (alleanza, invischiamento,
@@ -54,11 +59,16 @@ references) — non usarlo come verifica.
 - [ ] **Minuchin v2 (idee)**: overlay Minuchin sul canvas del genogramma (toggle);
       mappe multiple T0/T1 con vista confronto; creazione da gruppo household;
       inclusione delle mappe nel report clinico stampabile.
-- [ ] **Fase 5 — GenogramCanvas + gesture** (drag/pan/zoom/box-select in un hook o
-      componente). DECISIONE: rimandata deliberatamente — il codice è fortemente
-      accoppiato (~40 tra stati e ref condivisi) e il rischio di regressioni sulle
-      interazioni non è verificabile senza test manuali sull'app. Farla in una
-      sessione dedicata con verifica interattiva (npm run dev) passo-passo.
+- [x] **Fase 5 (prima parte)** — `hooks/useZoomPan.ts` (usePinchZoom: trackpad
+      pinch + Ctrl/rotella, clamp condiviso) estratto e verificato live.
+      Costruito l'harness per il resto: `scripts/e2e-smoke.cjs` (`npm run test:e2e`
+      con dev server su :5199) — 7 check reali su Chromium: creazione nodo, drag,
+      undo, zoom bottoni, pinch zoom, fit view, zero errori pagina.
+- [ ] **Fase 5 (seconda parte)** — la macchina a stati del drag (dragRef,
+      handleCanvasDown/Move/Up, getEventCoords) e le shortcut tastiera restano in
+      App.tsx: estrarle in una sessione dedicata usando `npm run test:e2e` come
+      regression gate dopo OGNI spostamento (aggiungendo check per box-select,
+      pan con spazio, resize gruppi, drag note).
 - [ ] **Simboli (seconda tranche, sforzo M)**: immigrazione/trasferimento con anno
       (freccia esterna), PMA/donatore/surrogata, distinzione alcol vs droghe
       (richiede scelta clinica: oggi `substanceAbuse` è generico — decidere se

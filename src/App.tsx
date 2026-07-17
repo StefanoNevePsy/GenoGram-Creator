@@ -34,6 +34,7 @@ import { ReportModal, SettingsModal, InstructionsModal, StyleDesignerModal, Repo
 import { parseFirebaseConfig } from './services/firebase';
 import { useGenogramHistory } from './hooks/useHistory';
 import { useAutosave } from './hooks/useAutosave';
+import { usePinchZoom } from './hooks/useZoomPan';
 import { MinuchinManager } from './components/minuchin';
 import { readLocalIndex, readFullGenogram, removeLocalGenogram, persistImportedLocally, downloadJsonFile } from './services/storage';
 
@@ -458,55 +459,8 @@ export default function GenogramApp() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    // --- NUOVO: SUPPORTO TRACKPAD PINCH-TO-ZOOM GLOBALE (Zen/Firefox/Safari/Chrome) ---
-    useEffect(() => {
-        // Funzione unificata per prevenire lo zoom nativo e gestire quello interno
-        const handleWheel = (e: WheelEvent) => {
-            // Firefox/Chrome usano Ctrl + Wheel per il pinch
-            if (e.ctrlKey) {
-                e.preventDefault(); // Blocca lo zoom della pagina intera
-
-                // Sensibilità ridotta per il trackpad
-                const sensitivity = 0.008;
-                const delta = -e.deltaY * sensitivity;
-
-                setZoom(prev => {
-                    const newZoom = prev + delta;
-                    return Math.min(3, Math.max(0.2, newZoom));
-                });
-            }
-        };
-
-        // Gestione specifica Safari (Gesture Events)
-        const handleGestureStart = (e: any) => {
-            e.preventDefault(); // Blocca zoom nativo Safari
-        };
-
-        const handleGestureChange = (e: any) => {
-            e.preventDefault();
-            const sensitivity = 0.05;
-            const delta = (e.scale - 1) * sensitivity;
-            setZoom(prev => Math.min(3, Math.max(0.2, prev + delta)));
-        };
-
-        const handleGestureEnd = (e: any) => e.preventDefault();
-
-        // NOTA: Agganciamo i listener a 'document' (non container) per intercettare l'evento
-        // prima che il browser esegua lo zoom della pagina.
-        const options = { passive: false };
-
-        document.addEventListener('wheel', handleWheel, options);
-        document.addEventListener('gesturestart', handleGestureStart, options);
-        document.addEventListener('gesturechange', handleGestureChange, options);
-        document.addEventListener('gestureend', handleGestureEnd, options);
-
-        return () => {
-            document.removeEventListener('wheel', handleWheel);
-            document.removeEventListener('gesturestart', handleGestureStart);
-            document.removeEventListener('gesturechange', handleGestureChange);
-            document.removeEventListener('gestureend', handleGestureEnd);
-        };
-    }, []);
+    // Pinch-to-zoom / Ctrl+rotella globale — vedi hooks/useZoomPan
+    usePinchZoom(setZoom);
 
     const nodesRef = useRef(nodes);
     useEffect(() => { nodesRef.current = nodes; }, [nodes]);
