@@ -1345,7 +1345,8 @@ export default function GenogramApp() {
             let clinicalInfo = [];
             if (n.deceased) clinicalInfo.push("Deceduto");
             if (n.indexPerson) clinicalInfo.push("Paziente Designato");
-            if (n.substanceAbuse) clinicalInfo.push("Abuso Sostanze");
+            if (n.substanceAbuse) clinicalInfo.push("Abuso Droghe/Sostanze");
+            if (n.alcoholAbuse) clinicalInfo.push("Abuso Alcol");
             if (n.mentalIssue) clinicalInfo.push("Problema Psicologico");
             if (n.physicalIssue) clinicalInfo.push("Problema Fisico");
             if (n.gayLesbian) clinicalInfo.push("Omosessuale");
@@ -2247,7 +2248,8 @@ export default function GenogramApp() {
                                     <div className="grid grid-cols-2 gap-2">
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.deceased ? 'bg-black text-white dark:bg-white dark:text-black' : 'theme-border hover:bg-black/5'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, deceased: !n.deceased } : n))}>Deceduto</button>
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.indexPerson ? 'bg-blue-600 text-white' : 'theme-border hover:bg-blue-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, indexPerson: !n.indexPerson } : n))}>Pz. Designato</button>
-                                        <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.substanceAbuse ? 'bg-orange-500 text-white' : 'theme-border hover:bg-orange-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, substanceAbuse: !n.substanceAbuse } : n))}>Abuso Sost.</button>
+                                        <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.substanceAbuse ? 'bg-orange-500 text-white' : 'theme-border hover:bg-orange-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, substanceAbuse: !n.substanceAbuse } : n))}>Abuso Droghe</button>
+                                        <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.alcoholAbuse ? 'bg-amber-700 text-white' : 'theme-border hover:bg-amber-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, alcoholAbuse: !n.alcoholAbuse } : n))}>Abuso Alcol</button>
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.mentalIssue ? 'bg-purple-500 text-white' : 'theme-border hover:bg-purple-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, mentalIssue: !n.mentalIssue } : n))}>Problema Psi.</button>
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.gayLesbian ? 'bg-pink-500 text-white' : 'theme-border hover:bg-pink-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, gayLesbian: !n.gayLesbian } : n))}>Omosessuale</button>
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.behavioralAddiction ? 'bg-teal-500 text-white' : 'theme-border hover:bg-teal-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, behavioralAddiction: !n.behavioralAddiction } : n))}>Dip. Comport.</button>

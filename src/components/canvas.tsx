@@ -401,12 +401,26 @@ export const PersonSymbol = ({ node, darkMode, isSelected = false }: { node: Gen
     // Usiamo colori specifici e rimuoviamo l'opacity globale per renderli vividi
     const Issues = () => (
         <g className="pointer-events-none">
-            {/* Abuso Sostanze: Arancione (Bottom Half) */}
-            {node.substanceAbuse && (
-                node.gender === 'M'
-                    ? <rect x={0} y={h / 2} width={w} height={h / 2} fill="#f97316" fillOpacity="0.8" stroke="none" />
-                    : <path d={`M 0 ${h / 2} A ${r} ${r} 0 0 0 ${w} ${h / 2} Z`} fill="#f97316" fillOpacity="0.8" stroke="none" />
-            )}
+            {/* Abuso Droghe (arancio) e Abuso Alcol (ambra scuro): metà inferiore.
+                Se presenti entrambi si dividono la metà in due bande orizzontali.
+                Le bande sono clippate sulla forma del genere via clipPath. */}
+            {(node.substanceAbuse || node.alcoholAbuse) && (() => {
+                const clipId = `symclip-${node.id}`;
+                const both = node.substanceAbuse && node.alcoholAbuse;
+                const clipShape = node.gender === 'M'
+                    ? <rect x={0} y={0} width={w} height={h} />
+                    : (node.gender === 'F' ? <circle cx={r} cy={r} r={r} />
+                        : <polygon points={`${w / 2},0 ${w},${h / 2} ${w / 2},${h} 0,${h / 2}`} />);
+                return (
+                    <g>
+                        <clipPath id={clipId}>{clipShape}</clipPath>
+                        <g clipPath={`url(#${clipId})`}>
+                            {node.substanceAbuse && <rect x={0} y={h / 2} width={w} height={both ? h / 4 : h / 2} fill="#f97316" fillOpacity="0.8" stroke="none" />}
+                            {node.alcoholAbuse && <rect x={0} y={both ? h * 0.75 : h / 2} width={w} height={both ? h / 4 : h / 2} fill="#92400e" fillOpacity="0.85" stroke="none" />}
+                        </g>
+                    </g>
+                );
+            })()}
 
             {/* Problema Psi: Viola (Left Half) */}
             {node.mentalIssue && (

@@ -82,14 +82,25 @@ references) — non usarlo come verifica.
 - [x] **Simboli (seconda tranche)**: immigrazione con anno (freccetta + anno in
       alto a dx del simbolo, campo `immigrationYear`), PMA/donazione (triangolo
       con D in alto a sx, flag `donorConceived`) — pannello + PersonSymbol +
-      report. RESTA solo la distinzione alcol vs droghe: richiede una scelta
-      clinica dell'utente (sdoppiare `substanceAbuse` o aggiungere sottotipo).
+      report.
+- [x] **Alcol vs droghe separati** (decisione utente: sdoppiare): `substanceAbuse`
+      resta col significato di droghe/sostanze (dati salvati invariati, etichetta
+      "Abuso Droghe"), nuovo flag opzionale `alcoholAbuse` ("Abuso Alcol", ambra
+      scuro). Rendering a bande clippate sulla forma del genere: se entrambi
+      presenti si dividono la metà inferiore in due bande. Pannello + report +
+      istruzioni aggiornati.
 - [x] **Layout C&M v2**: `birthOrder` su GenNode (ordina i fratelli senza data,
       vince sulla data; input nel pannello) e `startDate` sugli edge di coppia
       (ordine cronologico esplicito dei matrimoni multipli; la catena parte
       dall'estremo col legame più antico — fix scoperto dal test). 25 test verdi.
-      RESTA (minore): centratura per-unione nelle catene multi-matrimonio.
-- [ ] **Split cosmetico** dei cluster `components/*.tsx` in file singoli (bassa priorità).
+- [x] **Centratura per-unione** nelle catene multi-matrimonio: la traslazione
+      rigida della catena si calcola ai minimi quadrati sui punti medi delle
+      singole unioni rispetto ai rispettivi figli (con clamp nello span), invece
+      di centrarsi sull'insieme indistinto dei figli.
+- [x] **Split cosmetico** — CHIUSO senza intervento (decisione): i cluster
+      canvas/panels/modals sono coesi, non impattano tree-shaking né i gate, e
+      lo split aggiungerebbe solo churn di import. Riaprire solo se un cluster
+      supera ~1.500 righe o va condiviso fuori dall'app.
 - [x] **CI**: workflow GitHub Actions (`.github/workflows/ci.yml`) con i tre gate.
 - [x] **Fix S-Pen / tasto destro** (conflitti storici): guard su e.button in
       handleCanvasDown (barrel/destro → menu contestuale, MAI box-select fantasma);

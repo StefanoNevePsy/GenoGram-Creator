@@ -330,7 +330,7 @@ export const InstructionsModal = ({ onClose, firebaseConfig }: { onClose: () => 
                         <ul className="manual-list">
                             <li><strong>Dati Anagrafici:</strong> Nome, Data (es. "1980" o "12/05/1980").</li>
                             <li><strong>Mostra Età:</strong> Checkbox per nascondere/mostrare l'età calcolata.</li>
-                            <li><strong>Marcatori Clinici:</strong> Deceduto (X), Pz. Designato (Doppio bordo), Abuso Sostanze (Arancio), Problema Psi (Viola), Omosessualità (Triangolo Rosa).</li>
+                            <li><strong>Marcatori Clinici:</strong> Deceduto (X), Pz. Designato (Doppio bordo), Abuso Droghe (Arancio), Abuso Alcol (Ambra scuro), Problema Psi (Viola), Omosessualità (Triangolo Rosa).</li>
                         </ul>
 
                         <h3 className="manual-h3">🔗 Proprietà Relazione</h3>

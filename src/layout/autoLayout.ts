@@ -278,15 +278,43 @@ export const computeGenogramLayout = (
         });
         const kidsW = slots.length ? slots.reduce((s, x) => s + x.w, 0) + (slots.length - 1) * sibGap : 0;
         const span = Math.max(c.width, kidsW);
+        // Offset (rispetto a "first") del punto medio di ogni unione della catena
+        const unionOff = new Map<string, number>();
+        for (let i = 0; i < c.members.length - 1; i++) unionOff.set([c.members[i], c.members[i + 1]].sort().join('|'), (i + 0.5) * spouseDist);
+        c.members.forEach((m, i) => unionOff.set(m, i * spouseDist));
+        const childUnion = new Map<string, string>(); // figlio -> chiave unione
+        chainUnionKeys(c).forEach(key => unionChildren.get(key)!.forEach(k => childUnion.set(k, key)));
+
         let cursor = left + (span - kidsW) / 2;
+        const unionMids = new Map<string, number[]>(); // unione -> centri x dei suoi slot figli
         slots.forEach(s => {
             if (s.chain) place(s.chain, cursor);
             else stubPos.set(s.stub!, cursor);
+            const childId = s.stub ?? (s.chain ? s.chain.members.find(m => childUnion.has(m)) : undefined);
+            const uk = childId ? childUnion.get(childId) : undefined;
+            if (uk !== undefined && unionOff.has(uk)) {
+                const l = unionMids.get(uk) || [];
+                l.push(cursor + s.w / 2);
+                unionMids.set(uk, l);
+            }
             cursor += s.w + sibGap;
         });
-        // Centro della catena: sui figli se esistono, altrimenti sul proprio blocco
-        const center = left + span / 2;
-        const first = center - ((c.members.length - 1) * spouseDist) / 2;
+
+        // Centratura PER-UNIONE (minimi quadrati sulla traslazione rigida della catena):
+        // ogni unione tira "first" verso (centro dei propri figli - offset dell'unione).
+        // Senza figli si ricade sul centro dello span.
+        let first = left + span / 2 - ((c.members.length - 1) * spouseDist) / 2;
+        if (unionMids.size > 0) {
+            let sum = 0, count = 0;
+            unionMids.forEach((mids, uk) => {
+                const mid = mids.reduce((a, b) => a + b, 0) / mids.length;
+                sum += mid - unionOff.get(uk)!; count++;
+            });
+            const target = sum / count;
+            const firstMin = left;
+            const firstMax = left + span - (nodeW / 2 + (c.members.length - 1) * spouseDist);
+            first = Math.max(firstMin, Math.min(firstMax, target));
+        }
         c.members.forEach((m, i) => positions.set(m, { x: first + i * spouseDist, y }));
     };
 
