@@ -7,11 +7,14 @@ export interface GenNode {
     substanceAbuse: boolean; mentalIssue: boolean; physicalIssue: boolean; recovery: boolean;
     behavioralAddiction?: boolean; eatingDisorder?: boolean; institutionalized?: boolean;
     profession?: string;
+    birthOrder?: number;        // ordine di nascita esplicito (per fratelli senza data)
+    immigrationYear?: string;   // anno di immigrazione/trasferimento
+    donorConceived?: boolean;   // nato/a da PMA / donazione
     gayLesbian: boolean;
     showAge?: boolean;
     notes: NoteItem[];
 }
-export interface RelationEdge { id: string; fromId: string; toId: string; type: string; color?: string; lineStyle?: string; decorator?: string; label: string; notes: NoteItem[]; fromAnchor?: number; toAnchor?: number; }
+export interface RelationEdge { id: string; fromId: string; toId: string; type: string; startDate?: string; color?: string; lineStyle?: string; decorator?: string; label: string; notes: NoteItem[]; fromAnchor?: number; toAnchor?: number; }
 export interface NodeGroup { id: string; memberIds: string[]; type: 'household' | 'subsystem'; label: string; color: string; notes: NoteItem[]; labelPos?: { x: number, y: number }; customPadding?: number; showLabel?: boolean; }
 export interface CustomPreset { id: string; name: string; type: 'relationship'; config: { color: string; lineStyle: string; renderType: string; decorator: string; } }
 export interface GenogramMeta { id: string; title: string; category: string; lastModified: number; data: { nodes: GenNode[]; edges: RelationEdge[]; groups: NodeGroup[]; presets?: CustomPreset[]; stickyNotes?: any[]; structuralMaps?: StructuralMap[]; } }

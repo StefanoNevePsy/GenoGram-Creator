@@ -79,16 +79,24 @@ references) — non usarlo come verifica.
       Verificato con `npm run test:e2e` esteso a 9 check (aggiunti: spawn con M,
       box-select + Canc). Gli hook vanno chiamati DOPO la definizione di tutte le
       funzioni referenziate (prima del return dashboard).
-- [ ] **Simboli (seconda tranche, sforzo M)**: immigrazione/trasferimento con anno
-      (freccia esterna), PMA/donatore/surrogata, distinzione alcol vs droghe
-      (richiede scelta clinica: oggi `substanceAbuse` è generico — decidere se
-      sdoppiare il flag o aggiungere un sottotipo).
-- [ ] **Layout C&M v2 (rifiniture)**: centratura per-unione nelle catene multi-matrimonio
-      (oggi la catena si centra sull'insieme dei figli); campo opzionale `birthOrder`
-      su GenNode per ordinare fratelli senza data; campo `startDate` sugli edge di
-      coppia per l'ordine cronologico esplicito dei matrimoni multipli.
+- [x] **Simboli (seconda tranche)**: immigrazione con anno (freccetta + anno in
+      alto a dx del simbolo, campo `immigrationYear`), PMA/donazione (triangolo
+      con D in alto a sx, flag `donorConceived`) — pannello + PersonSymbol +
+      report. RESTA solo la distinzione alcol vs droghe: richiede una scelta
+      clinica dell'utente (sdoppiare `substanceAbuse` o aggiungere sottotipo).
+- [x] **Layout C&M v2**: `birthOrder` su GenNode (ordina i fratelli senza data,
+      vince sulla data; input nel pannello) e `startDate` sugli edge di coppia
+      (ordine cronologico esplicito dei matrimoni multipli; la catena parte
+      dall'estremo col legame più antico — fix scoperto dal test). 25 test verdi.
+      RESTA (minore): centratura per-unione nelle catene multi-matrimonio.
 - [ ] **Split cosmetico** dei cluster `components/*.tsx` in file singoli (bassa priorità).
 - [x] **CI**: workflow GitHub Actions (`.github/workflows/ci.yml`) con i tre gate.
+- [x] **Fix S-Pen / tasto destro** (conflitti storici): guard su e.button in
+      handleCanvasDown (barrel/destro → menu contestuale, MAI box-select fantasma);
+      cursorRef via pointermove (penna in hover e touch, non solo mouse);
+      handleNativeSPen annulla drag/long-press in corso. Verificato con
+      `npm run test:e2e:pen` (8 check: maniglie spouse/child, tasto destro,
+      barrel web, evento nativo sPenNativeEvent simulato).
 
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.

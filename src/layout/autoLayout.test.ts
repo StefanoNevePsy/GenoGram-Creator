@@ -131,3 +131,32 @@ describe('layout C&M: robustezza input degeneri', () => {
         positions.forEach(v => expect(Number.isFinite(v.x) && Number.isFinite(v.y)).toBe(true));
     });
 });
+
+describe('layout C&M v2: birthOrder e startDate', () => {
+    it('birthOrder esplicito ordina i fratelli senza data', () => {
+        const nodes = [
+            N('p', 'M', '1960'), N('m', 'F', '1962'),
+            { ...N('a', 'F'), birthOrder: 2 }, { ...N('b', 'M'), birthOrder: 1 }, { ...N('c', 'F'), birthOrder: 3 },
+        ];
+        const edges = [
+            E('p', 'm', 'marriage'),
+            E('p', 'a', 'child-bio'), E('m', 'a', 'child-bio'),
+            E('p', 'b', 'child-bio'), E('m', 'b', 'child-bio'),
+            E('p', 'c', 'child-bio'), E('m', 'c', 'child-bio'),
+        ];
+        const { positions: P } = computeGenogramLayout(nodes, edges, { snap: 0 });
+        expect(P.get('b')!.x).toBeLessThan(P.get('a')!.x);
+        expect(P.get('a')!.x).toBeLessThan(P.get('c')!.x);
+    });
+    it('startDate ordina cronologicamente i matrimoni multipli (vince sull\'ordine di creazione)', () => {
+        const nodes = [N('marito', 'M', '1960'), N('recente', 'F', '1970'), N('prima', 'F', '1962')];
+        // Edge "recente" creato PRIMA ma con startDate successiva: deve finire a destra
+        const edges = [
+            { ...E('marito', 'recente', 'marriage'), startDate: '2010' },
+            { ...E('marito', 'prima', 'divorce'), startDate: '1985' },
+        ];
+        const { positions: P } = computeGenogramLayout(nodes, edges, { snap: 0 });
+        expect(P.get('prima')!.x).toBeLessThan(P.get('marito')!.x);
+        expect(P.get('marito')!.x).toBeLessThan(P.get('recente')!.x);
+    });
+});

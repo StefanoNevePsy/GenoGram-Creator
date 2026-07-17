@@ -122,9 +122,12 @@ export const computeGenogramLayout = (
     const partnerAdj = new Map<string, { partner: string, order: number }[]>();
     coupleEdges.forEach((e, i) => {
         if (gen.get(e.fromId) !== gen.get(e.toId)) return; // gen diverse: la linea resta, il blocco no
+        // startDate esplicita vince sull'ordine di creazione dell'edge
+        const sd = parseDate(e.startDate || '');
+        const order = sd ? sd.getTime() : Number.MAX_SAFE_INTEGER / 2 + i;
         const add = (a: string, b: string) => {
             const l = partnerAdj.get(a) || [];
-            if (!l.some(x => x.partner === b)) l.push({ partner: b, order: i });
+            if (!l.some(x => x.partner === b)) l.push({ partner: b, order });
             partnerAdj.set(a, l);
         };
         add(e.fromId, e.toId); add(e.toId, e.fromId);
@@ -148,7 +151,10 @@ export const computeGenogramLayout = (
         if (comp.size === 1) members = [id];
         else {
             const degree = (x: string) => (partnerAdj.get(x) || []).filter(p => comp.has(p.partner)).length;
-            const endpoints = Array.from(comp).filter(x => degree(x) === 1).sort((a, b) => nodeIndex.get(a)! - nodeIndex.get(b)!);
+            // Si parte dall'estremo col legame più ANTICO: così la catena scorre
+            // in ordine cronologico sx->dx (startDate esplicita o ordine di creazione)
+            const minOrder = (x: string) => Math.min(...(partnerAdj.get(x) || []).filter(p => comp.has(p.partner)).map(p => p.order));
+            const endpoints = Array.from(comp).filter(x => degree(x) === 1).sort((a, b) => minOrder(a) - minOrder(b) || nodeIndex.get(a)! - nodeIndex.get(b)!);
             const start = endpoints[0] || Array.from(comp).sort((a, b) => nodeIndex.get(a)! - nodeIndex.get(b)!)[0];
             members = [start];
             const used = new Set([start]);
@@ -180,17 +186,25 @@ export const computeGenogramLayout = (
         const d = parseDate(nodeById.get(id)?.birthDate || '');
         return d ? d.getTime() : Number.MAX_SAFE_INTEGER;
     };
+    // birthOrder esplicito vince sulla data: chi lo ha viene prima, nel suo ordine
+    const siblingKey = (id: string): [number, number] => {
+        const bo = nodeById.get(id)?.birthOrder;
+        return bo !== undefined ? [0, bo] : [1, birthKey(id)];
+    };
     const sortSiblings = (ids: string[]): string[] => {
-        const groupKey = new Map<string, number>();
+        const groupKey = new Map<string, [number, number]>();
         ids.forEach(id => {
             const r = findTwin(id);
-            groupKey.set(r, Math.min(groupKey.get(r) ?? Infinity, birthKey(id)));
+            const k = siblingKey(id);
+            const cur = groupKey.get(r);
+            if (!cur || k[0] < cur[0] || (k[0] === cur[0] && k[1] < cur[1])) groupKey.set(r, k);
         });
+        const cmp = (a: [number, number], b: [number, number]) => a[0] - b[0] || a[1] - b[1];
         return [...ids].sort((a, b) => {
-            const ka = groupKey.get(findTwin(a))!; const kb = groupKey.get(findTwin(b))!;
-            if (ka !== kb) return ka - kb;
-            const ba = birthKey(a), bb = birthKey(b);
-            if (ba !== bb) return ba - bb;
+            const g = cmp(groupKey.get(findTwin(a))!, groupKey.get(findTwin(b))!);
+            if (g !== 0) return g;
+            const s = cmp(siblingKey(a), siblingKey(b));
+            if (s !== 0) return s;
             return nodeIndex.get(a)! - nodeIndex.get(b)!;
         });
     };

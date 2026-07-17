@@ -455,7 +455,23 @@ export const PersonSymbol = ({ node, darkMode, isSelected = false }: { node: Gen
     const DeceasedMark = node.deceased ? <g stroke={strokeColor} strokeWidth={1.5}><line x1={0} y1={0} x2={w} y2={h} /><line x1={w} y1={0} x2={0} y2={h} /></g> : null;
     const IndexMark = node.indexPerson ? (node.gender === 'M' ? <rect x={6} y={6} width={w - 12} height={h - 12} stroke={strokeColor} strokeWidth={1.5} fill="none" /> : <circle cx={w / 2} cy={h / 2} r={w / 2 - 6} stroke={strokeColor} strokeWidth={1.5} fill="none" />) : null;
 
-    return <g>{Shape}<Issues />{IndexMark}{DeceasedMark}{InstitutionMark}</g>;
+    // Immigrazione: freccetta con anno in alto a destra (convenzione genogrammi transculturali)
+    const ImmigrationMark = node.immigrationYear ? (
+        <g>
+            <line x1={w + 3} y1={-6} x2={w + 11} y2={-14} stroke={strokeColor} strokeWidth={1.5} />
+            <polygon points={`${w + 11},-14 ${w + 5},-13 ${w + 10},-8`} fill={strokeColor} />
+            <text x={w + 13} y={-8} fontSize={7} fill={strokeColor}>{node.immigrationYear}</text>
+        </g>
+    ) : null;
+    // PMA/Donazione: triangolino con "D" in alto a sinistra
+    const DonorMark = node.donorConceived ? (
+        <g>
+            <polygon points={`-14,-4 -4,-4 -9,-14`} stroke={strokeColor} strokeWidth={1.2} fill="none" />
+            <text x={-9} y={-6} fontSize={6.5} fill={strokeColor} textAnchor="middle" fontWeight={700}>D</text>
+        </g>
+    ) : null;
+
+    return <g>{Shape}<Issues />{IndexMark}{DeceasedMark}{InstitutionMark}{ImmigrationMark}{DonorMark}</g>;
 };
 
 export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, selectionMode, onRename }: any) => {

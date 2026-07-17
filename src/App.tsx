@@ -1336,6 +1336,7 @@ export default function GenogramApp() {
             if (options.showBirthDate && n.birthDate) detailsParts.push(n.birthDate);
             if (options.showBirthDate && n.deceased && n.deathDate) detailsParts.push(`† ${n.deathDate}`);
             if (n.profession) detailsParts.push(n.profession);
+            if (n.immigrationYear) detailsParts.push(`immigrato/a ${n.immigrationYear}`);
             if (options.showAge && n.birthDate) detailsParts.push(n.deceased && n.deathDate ? `${calculateAgeAtDeath(n.birthDate, n.deathDate)} anni (al decesso)` : `${calculateAge(n.birthDate)} anni`);
 
             const detailsString = detailsParts.length > 0 ? `<small style="font-weight:normal; color:#666;">(${detailsParts.join(', ')})</small>` : '';
@@ -1351,6 +1352,7 @@ export default function GenogramApp() {
             if (n.behavioralAddiction) clinicalInfo.push("Dipendenza Comportamentale");
             if (n.eatingDisorder) clinicalInfo.push("Disturbo Alimentare");
             if (n.institutionalized) clinicalInfo.push("Istituzionalizzato");
+            if (n.donorConceived) clinicalInfo.push("Nato/a da PMA/donazione");
 
             return `
             <div class="person-card">
@@ -2212,6 +2214,10 @@ export default function GenogramApp() {
                                     <input className="w-full border p-1 rounded bg-transparent theme-border font-bold" value={selectedNode.name} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, name: e.target.value } : n))} placeholder="Nome" />
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.label || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, label: e.target.value } : n))} placeholder="Etichetta (es. Padre)" />
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.profession || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, profession: e.target.value } : n))} placeholder="Professione" />
+                                    <div className="flex gap-2">
+                                        <input type="number" min="1" className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.birthOrder ?? ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthOrder: e.target.value === '' ? undefined : parseInt(e.target.value) } : n))} placeholder="Ordine nascita" title="Ordine di nascita esplicito: usato dal layout C&M quando mancano le date" />
+                                        <input className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.immigrationYear || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, immigrationYear: e.target.value } : n))} placeholder="Anno immigrazione" />
+                                    </div>
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: e.target.value } : n))} placeholder="Nascita (Data, Anno o inserisci direttamente un'Età)" />
                                     {selectedNode.deceased && (
                                         <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.deathDate || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, deathDate: e.target.value } : n))} placeholder="Morte (Data o Anno)" />
@@ -2247,6 +2253,7 @@ export default function GenogramApp() {
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.behavioralAddiction ? 'bg-teal-500 text-white' : 'theme-border hover:bg-teal-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, behavioralAddiction: !n.behavioralAddiction } : n))}>Dip. Comport.</button>
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.eatingDisorder ? 'bg-rose-600 text-white' : 'theme-border hover:bg-rose-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, eatingDisorder: !n.eatingDisorder } : n))}>Dist. Alimentare</button>
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.institutionalized ? 'bg-slate-600 text-white' : 'theme-border hover:bg-slate-100'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, institutionalized: !n.institutionalized } : n))}>Istituzionaliz.</button>
+                                        <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.donorConceived ? 'bg-indigo-500 text-white' : 'theme-border hover:bg-indigo-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, donorConceived: !n.donorConceived } : n))}>PMA/Donaz.</button>
                                     </div>
 
                                     <NotesPanel notes={selectedNode.notes} onChange={newNotes => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, notes: newNotes } : n))} />
@@ -2298,6 +2305,7 @@ export default function GenogramApp() {
                                     }} className="text-black" />
 
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.label} onChange={e => updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, label: e.target.value } : ed))} placeholder="Etichetta" />
+                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.startDate || ''} onChange={e => updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, startDate: e.target.value } : ed))} placeholder="Inizio relazione (data o anno)" title="Usata dal layout C&M per ordinare cronologicamente i matrimoni multipli" />
 
                                     <NotesPanel notes={selectedEdge.notes} onChange={newNotes => updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, notes: newNotes } : ed))} />
 
