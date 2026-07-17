@@ -61,6 +61,30 @@ const ok = (cond, msg) => { console.log((cond ? 'PASS' : 'FAIL') + ' ' + msg); i
     await page.waitForTimeout(400);
     ok(true, 'fit view eseguito senza crash');
 
+    // 7. Spawn rapido con tasto M (useKeyboardShortcuts)
+    await page.keyboard.press('Escape');
+    const countBefore = await page.locator('svg g.cursor-pointer rect[width="40"]').count();
+    await page.mouse.move(500, 400);
+    await page.keyboard.press('m');
+    await page.waitForTimeout(300);
+    const countAfter = await page.locator('svg g.cursor-pointer rect[width="40"]').count();
+    ok(countAfter === countBefore + 1, `spawn con tasto M (${countBefore} → ${countAfter})`);
+
+    // 8. Box select (useCanvasInteraction): trascina su area vuota includendo un nodo
+    await page.keyboard.press('Escape');
+    const target = await page.locator('svg g.cursor-pointer rect[width="40"]').last().boundingBox();
+    await page.mouse.move(target.x - 80, target.y - 80);
+    await page.mouse.down();
+    await page.mouse.move(target.x + 120, target.y + 120, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    // La prova che la box-select ha selezionato è che Canc elimina i nodi
+    page.once('dialog', d => d.accept());
+    await page.keyboard.press('Delete');
+    await page.waitForTimeout(300);
+    const countFinal = await page.locator('svg g.cursor-pointer rect[width="40"]').count();
+    ok(countFinal < countAfter, `box-select + Canc eliminano la selezione (${countAfter} → ${countFinal})`);
+
     ok(errors.length === 0, `zero errori pagina (${errors.length ? errors[0].slice(0, 80) : 'ok'})`);
     await browser.close();
     process.exit(failures ? 1 : 0);

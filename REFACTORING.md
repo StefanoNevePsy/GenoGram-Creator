@@ -42,6 +42,11 @@ references) — non usarlo come verifica.
       conviventi. Tutti i flag nuovi sono opzionali → retrocompatibili coi dati salvati.
 - [x] **Pulizia** — eliminati `genogramConfig.ts`, `fix*.cjs`, `events.txt`.
 
+- [x] **Minuchin v3**: tema completo dell'app (colori concreti via prop, necessari
+      anche all'export PNG); mappe utilizzabili a genogramma vuoto ("Nuova mappa
+      vuota"); creazione persone dall'editor → entrano nel genogramma dentro il
+      CARTIGLIO (cornice tratteggiata color accento, griglia 3 colonne vicino al
+      centro canvas), si assegnano trascinandole fuori.
 - [x] **Minuchin v2**: membri resi con i simboli reali del genogramma tramite
       `PersonSymbol` (estratto da NodeShape, unica fonte per canvas e mappe);
       confini VERTICALI tra sottosistemi (aggiunta da toolbar, drag, ciclo stile,
@@ -64,11 +69,16 @@ references) — non usarlo come verifica.
       Costruito l'harness per il resto: `scripts/e2e-smoke.cjs` (`npm run test:e2e`
       con dev server su :5199) — 7 check reali su Chromium: creazione nodo, drag,
       undo, zoom bottoni, pinch zoom, fit view, zero errori pagina.
-- [ ] **Fase 5 (seconda parte)** — la macchina a stati del drag (dragRef,
-      handleCanvasDown/Move/Up, getEventCoords) e le shortcut tastiera restano in
-      App.tsx: estrarle in una sessione dedicata usando `npm run test:e2e` come
-      regression gate dopo OGNI spostamento (aggiungendo check per box-select,
-      pan con spazio, resize gruppi, drag note).
+- [x] **Fase 5 COMPLETATA** — estratti `hooks/useKeyboardShortcuts.ts` (tutte le
+      shortcut globali; NOTA: `history` va passato esplicitamente nelle deps,
+      altrimenti risolve in silenzio su window.history) e
+      `hooks/useCanvasInteraction.ts` (macchina a stati del drag: coordinate
+      touch/mouse, pan, box-select, long-press, drag nodi/note/gruppi, resize
+      padding, transformer, listener globali). dragRef/dragState restano in App
+      (servono al rendering delle anteprime). App.tsx: ~2.430 righe.
+      Verificato con `npm run test:e2e` esteso a 9 check (aggiunti: spawn con M,
+      box-select + Canc). Gli hook vanno chiamati DOPO la definizione di tutte le
+      funzioni referenziate (prima del return dashboard).
 - [ ] **Simboli (seconda tranche, sforzo M)**: immigrazione/trasferimento con anno
       (freccia esterna), PMA/donatore/surrogata, distinzione alcol vs droghe
       (richiede scelta clinica: oggi `substanceAbuse` è generico — decidere se
