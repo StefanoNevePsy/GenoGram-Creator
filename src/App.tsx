@@ -2109,6 +2109,7 @@ export default function GenogramApp() {
             if (options.showGender) detailsParts.push(n.gender);
             if (options.showBirthDate && n.birthDate) detailsParts.push(n.birthDate);
             if (options.showBirthDate && n.deceased && n.deathDate) detailsParts.push(`† ${n.deathDate}`);
+            if (n.profession) detailsParts.push(n.profession);
             if (options.showAge && n.birthDate) detailsParts.push(n.deceased && n.deathDate ? `${calculateAgeAtDeath(n.birthDate, n.deathDate)} anni (al decesso)` : `${calculateAge(n.birthDate)} anni`);
 
             const detailsString = detailsParts.length > 0 ? `<small style="font-weight:normal; color:#666;">(${detailsParts.join(', ')})</small>` : '';
@@ -2121,6 +2122,9 @@ export default function GenogramApp() {
             if (n.mentalIssue) clinicalInfo.push("Problema Psicologico");
             if (n.physicalIssue) clinicalInfo.push("Problema Fisico");
             if (n.gayLesbian) clinicalInfo.push("Omosessuale");
+            if (n.behavioralAddiction) clinicalInfo.push("Dipendenza Comportamentale");
+            if (n.eatingDisorder) clinicalInfo.push("Disturbo Alimentare");
+            if (n.institutionalized) clinicalInfo.push("Istituzionalizzato");
 
             return `
             <div class="person-card">
@@ -2991,6 +2995,7 @@ export default function GenogramApp() {
                                 <div className="space-y-3 animate-in fade-in slide-in-from-right-4 duration-200">
                                     <input className="w-full border p-1 rounded bg-transparent theme-border font-bold" value={selectedNode.name} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, name: e.target.value } : n))} placeholder="Nome" />
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.label || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, label: e.target.value } : n))} placeholder="Etichetta (es. Padre)" />
+                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.profession || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, profession: e.target.value } : n))} placeholder="Professione" />
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: e.target.value } : n))} placeholder="Nascita (Data, Anno o inserisci direttamente un'Età)" />
                                     {selectedNode.deceased && (
                                         <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.deathDate || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, deathDate: e.target.value } : n))} placeholder="Morte (Data o Anno)" />
@@ -3023,6 +3028,9 @@ export default function GenogramApp() {
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.substanceAbuse ? 'bg-orange-500 text-white' : 'theme-border hover:bg-orange-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, substanceAbuse: !n.substanceAbuse } : n))}>Abuso Sost.</button>
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.mentalIssue ? 'bg-purple-500 text-white' : 'theme-border hover:bg-purple-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, mentalIssue: !n.mentalIssue } : n))}>Problema Psi.</button>
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.gayLesbian ? 'bg-pink-500 text-white' : 'theme-border hover:bg-pink-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, gayLesbian: !n.gayLesbian } : n))}>Omosessuale</button>
+                                        <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.behavioralAddiction ? 'bg-teal-500 text-white' : 'theme-border hover:bg-teal-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, behavioralAddiction: !n.behavioralAddiction } : n))}>Dip. Comport.</button>
+                                        <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.eatingDisorder ? 'bg-rose-600 text-white' : 'theme-border hover:bg-rose-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, eatingDisorder: !n.eatingDisorder } : n))}>Dist. Alimentare</button>
+                                        <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.institutionalized ? 'bg-slate-600 text-white' : 'theme-border hover:bg-slate-100'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, institutionalized: !n.institutionalized } : n))}>Istituzionaliz.</button>
                                     </div>
 
                                     <NotesPanel notes={selectedNode.notes} onChange={newNotes => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, notes: newNotes } : n))} />

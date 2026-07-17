@@ -5,6 +5,8 @@ export interface GenNode {
     id: string; x: number; y: number; gender: Gender; name: string; label?: string;
     birthDate: string; deceased: boolean; deathDate?: string; indexPerson: boolean;
     substanceAbuse: boolean; mentalIssue: boolean; physicalIssue: boolean; recovery: boolean;
+    behavioralAddiction?: boolean; eatingDisorder?: boolean; institutionalized?: boolean;
+    profession?: string;
     gayLesbian: boolean;
     showAge?: boolean;
     notes: NoteItem[];

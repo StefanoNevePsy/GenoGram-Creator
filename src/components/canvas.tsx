@@ -169,6 +169,7 @@ export const LinePreview = ({ type, width = 50, darkMode = false, transparent = 
                 <polygon points="-4,-4 4,0 -4,4" fill={stroke} transform={`translate(${x2}, ${midY})`} />
             </g>;
         }
+        if (config.renderType === 'arrow-open-both') return <g><polyline points="-5,-4 5,0 -5,4" stroke={stroke} strokeWidth={1.5} fill="none" transform={arrowTrans} /><polyline points="5,-4 -5,0 5,4" stroke={stroke} strokeWidth={1.5} fill="none" transform={`translate(6, ${midY})`} /></g>;
         if (config.renderType === 'arrow-open-end') return <polyline points="-5,-4 5,0 -5,4" stroke={stroke} strokeWidth={1.5} fill="none" transform={arrowTrans} />;
         if (config.renderType === 'arrow-open-center') return <polyline points="-5,-4 5,0 -5,4" stroke={stroke} strokeWidth={1.5} fill="none" transform={centerArrowTrans} />;
         if (config.renderType.includes('arrow') && !config.renderType.includes('center')) return <g><polygon points="-5,-4 5,0 -5,4" fill={stroke} transform={arrowTrans} /></g>;
@@ -352,6 +353,10 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
         // I check specifici devono precedere quello generico, altrimenti sono irraggiungibili
         if (renderType === 'arrow-thick') return <polygon points="-8,-8 4,0 -8,8" fill={stroke} transform={arrowTrans} />;
         if (renderType === 'arrow-end') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /></g>;
+        if (renderType === 'arrow-open-both') {
+            const startTrans = `translate(${start.x},${start.y}) rotate(${angle + 180}) translate(-${arrowOffset},0)`;
+            return <g><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={arrowTrans} /><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={startTrans} /></g>;
+        }
         if (renderType === 'arrow-open-end') return <g><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={arrowTrans} /></g>;
         if (renderType === 'arrow-open-center') return <g><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={centerArrowTrans} /></g>;
         if (renderType.includes('arrow') && !renderType.includes('center') && !renderType.includes('thick')) return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /></g>;
@@ -441,6 +446,22 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
                     : <path d={`M ${r} 0 A ${r} ${r} 0 0 0 ${r} ${h} Z`} fill="#8b5cf6" fillOpacity="0.8" stroke="none" />
             )}
 
+            {/* Dipendenza Comportamentale: Teal (righe orizzontali metà inferiore) */}
+            {node.behavioralAddiction && (
+                <g stroke="#14b8a6" strokeWidth={2.5} strokeOpacity="0.9">
+                    <line x1={6} y1={h * 0.62} x2={w - 6} y2={h * 0.62} />
+                    <line x1={7} y1={h * 0.75} x2={w - 7} y2={h * 0.75} />
+                    <line x1={9} y1={h * 0.88} x2={w - 9} y2={h * 0.88} />
+                </g>
+            )}
+
+            {/* Disturbo Alimentare: contorno interno tratteggiato */}
+            {node.eatingDisorder && (
+                node.gender === 'M'
+                    ? <rect x={4} y={4} width={w - 8} height={h - 8} stroke="#e11d48" strokeWidth={1.5} strokeDasharray="3 2" fill="none" />
+                    : <circle cx={w / 2} cy={h / 2} r={r - 4} stroke="#e11d48" strokeWidth={1.5} strokeDasharray="3 2" fill="none" />
+            )}
+
             {/* Omosessualità: Rosa (Triangolo Inverso) */}
             {/* Aggiungiamo un stroke bianco/scuro per farlo risaltare se sovrapposto all'arancione */}
             {node.gayLesbian && (
@@ -453,6 +474,14 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
             )}
         </g>
     );
+
+    // Istituzionalizzazione (carcere, comunità, RSA): parentesi quadre attorno al simbolo
+    const InstitutionMark = node.institutionalized ? (
+        <g stroke={strokeColor} strokeWidth={1.5} fill="none">
+            <path d={`M -4 -4 L -8 -4 L -8 ${h + 4} L -4 ${h + 4}`} />
+            <path d={`M ${w + 4} -4 L ${w + 8} -4 L ${w + 8} ${h + 4} L ${w + 4} ${h + 4}`} />
+        </g>
+    ) : null;
 
     const DeceasedMark = node.deceased ? <g stroke={strokeColor} strokeWidth={1.5}><line x1={0} y1={0} x2={w} y2={h} /><line x1={w} y1={0} x2={0} y2={h} /></g> : null;
     const IndexMark = node.indexPerson ? (node.gender === 'M' ? <rect x={6} y={6} width={w - 12} height={h - 12} stroke={strokeColor} strokeWidth={1.5} fill="none" /> : <circle cx={w / 2} cy={h / 2} r={w / 2 - 6} stroke={strokeColor} strokeWidth={1.5} fill="none" />) : null;
@@ -516,7 +545,7 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
 
     return (
         <g transform={`translate(${node.x},${node.y})`} className="cursor-pointer group" onDoubleClick={handleDoubleClick}>
-            {Shape} <Issues /> {IndexMark} {DeceasedMark}
+            {Shape} <Issues /> {IndexMark} {DeceasedMark} {InstitutionMark}
 
             {isEditing ? (
                 <foreignObject x={-40} y={-30} width={120} height={30}>
@@ -553,6 +582,7 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
             )}
 
             {node.label && <TextLabel y={h + 14} text={node.label} size={9} />}
+            {node.profession && <TextLabel y={h + (node.label ? 26 : 14)} text={node.profession} size={8} />}
 
             {node.notes && node.notes.length > 0 && <circle cx={w + 5} cy={0} r={4} fill="#ef4444" stroke="white" strokeWidth={1} />}
 

@@ -34,21 +34,18 @@ senza NUOVI errori (vedi nota sotto).
 - [ ] **Fase 4** — `hooks/useHistory.ts` (stack+index+historyIndexRef INSIEME),
       `hooks/useAutosave.ts`. Delicato: closure e ref condivisi.
 - [ ] **Fase 5** — `GenogramCanvas` + gesture (drag/pan/zoom). Ultimo, rischio alto.
-- [ ] **Simboli nuovi**: alcol vs droghe distinti, dipendenza comportamentale,
-      disturbo alimentare, istituzionalizzazione, immigrazione, PMA/donatore,
-      campo professione; relazione "violenza reciproca" (zigzag doppia freccia),
-      "fidanzati conviventi".
-- [ ] **Pulizia**: `src/genogramConfig.ts` è legacy morto (nessuno lo importa) → eliminare.
-      `fix.cjs`, `fix2.cjs`, `fix_syntax.cjs`, `events.txt` in src/ → eliminare.
-- [ ] **Debito strict**: `tsc -p tsconfig.app.json` ha ~25 errori PRE-esistenti
-      (TS6133 variabili inutilizzate, `NodeJS` namespace, null-check dragRef,
-      handler onClick con firma sbagliata a r.~4494). Il vecchio `npx tsc --noEmit`
-      alla radice era un NO-OP (tsconfig con files:[] + references). Da bonificare
-      in una fase dedicata, poi usare `tsc -b` come gate.
-- [ ] **Vitest**: aggiungere per `utils/*` e soprattutto `layout/autoLayout.ts`
-      (fixture: famiglia nucleare, 3 generazioni, divorzio+risposato, gemelli,
-      monogenitore; proprietà: no sovrapposizioni, primogenito.x < fratelli.x,
-      M.x < F.x nella coppia, genitori centrati sui figli).
+- [x] **Simboli nuovi (prima tranche)**: dipendenza comportamentale (righe teal),
+      disturbo alimentare (contorno interno tratteggiato), istituzionalizzazione
+      (parentesi quadre), campo professione (input + rendering + report);
+      relazioni "violenza reciproca" (renderType arrow-open-both) e "fidanzati
+      conviventi". Restano (M, opzionali): immigrazione con anno, PMA/donatore,
+      distinzione alcol/droghe.
+- [x] **Pulizia**: eliminati `genogramConfig.ts`, `fix*.cjs`, `events.txt`.
+- [x] **Debito strict**: bonificati tutti i 28 errori. Ora il gate è
+      `npx tsc -p tsconfig.app.json --noEmit` (verde) + `npm test` + `npm run build`.
+- [x] **Vitest**: installato; `npm test` esegue 14 test su `layout/autoLayout.ts`
+      (3 generazioni, divorzio+risposato, gemelli, grafo vuoto, ciclo, coniugi
+      su generazioni incompatibili).
 
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.

@@ -7,7 +7,7 @@ export type RelationshipConfig = {
     renderType:
     | 'standard' | 'double' | 'triple' | 'triple-zigzag' | 'arrow' | 'arrow-open' | 'arrow-thick'
     | 'arrow-x-center' | 'arrow-box-center' | 'arrow-diamond-center' | 'arrow-double-bar-center'
-    | 'arrow-end' | 'arrow-open-end' | 'arrow-open-center'
+    | 'arrow-end' | 'arrow-open-end' | 'arrow-open-center' | 'arrow-open-both'
     | 'cutoff' | 'cutoff-double' | 'cutoff-circle' | 'cutoff-repaired-circle'
     | 'fusion' | 'best-friend' | 'fusion-hostile' | 'double-zigzag' | 'triple-zigzag-center' | 'triple-zigzag-center-arrow'
     | 'zigzag-overlay' | 'twin-link' | 'twin-link-bar' | 'two-circles-center' | 'double-arrow-inward'
@@ -32,6 +32,7 @@ export const BASE_REL_CONFIG: Record<string, RelationshipConfig> = {
     'affair': { label: 'Relazione Extra/Amante', color: '#FFD700', lineStyle: 'dotted', renderType: 'standard' },
     'one-night': { label: 'Avventura', color: '#FFD700', lineStyle: 'dotted', renderType: 'standard' },
     'engagement': { label: 'Fidanzamento', color: '#0000FF', lineStyle: 'dashed', renderType: 'standard' },
+    'engagement-cohab': { label: 'Fidanzati Conviventi', color: '#0000FF', lineStyle: 'dashed', renderType: 'dashed-inner' },
 
     // 2. FIGLI
     'child-bio': { label: 'Figlio Biologico', color: '#000000', lineStyle: 'solid', renderType: 'standard' },
@@ -76,6 +77,7 @@ export const BASE_REL_CONFIG: Record<string, RelationshipConfig> = {
     'controlling': { label: 'Controllante', color: '#800080', lineStyle: 'solid', renderType: 'arrow-box-center' },
     'keeper': { label: 'Custode/Caregiver', color: '#008080', lineStyle: 'solid', renderType: 'arrow-diamond-center' },
     'neglect': { label: 'Trascuratezza', color: '#808080', lineStyle: 'dashed', renderType: 'double-arrow-inward' },
+    'violence-mutual': { label: 'Violenza Reciproca', color: '#FF0000', lineStyle: 'zigzag', renderType: 'arrow-open-both' },
 
     'custom': { label: 'Personalizzata', color: '#000000', lineStyle: 'solid', renderType: 'standard' }
 };
@@ -85,14 +87,14 @@ export const RELATION_CATEGORIES: Record<string, string[]> = {
         'marriage', 'secret', 'cohabitation', 'couple', 'divorce-commit',
         'separation', 'separation-repaired', 'separation-cohab',
         'divorce', 'divorce-repaired', 're-marriage',
-        'engagement', 'affair', 'one-night'
+        'engagement', 'engagement-cohab', 'affair', 'one-night'
     ],
     "Figli": ['child-bio', 'child-adopted', 'child-foster', 'twin-dizygotic', 'twin-monozygotic', 'pregnancy'],
     "Interazione / Affettive": ['correlated', 'harmony', 'friendship', 'best-friend', 'close', 'fusion', 'in-love', 'fan', 'spiritual'],
     "Conflitto e Distanza": ['distance', 'poor', 'hostile', 'close-hostile', 'fusion-hostile', 'hate', 'cutoff', 'restored'],
     "Violenza, Abuso e Potere": [
         'violence-psychological', 'violence-physical', 'violence-sexual',
-        'abuse-physical', 'abuse-emotional', 'abuse-sexual', 'neglect',
+        'abuse-physical', 'abuse-emotional', 'abuse-sexual', 'neglect', 'violence-mutual',
         'focused', 'focused-negative', 'companions', 'manipulative', 'controlling', 'keeper'
     ],
     "Altro": ['custom']
