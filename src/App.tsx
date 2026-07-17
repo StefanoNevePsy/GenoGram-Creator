@@ -1322,6 +1322,18 @@ export default function GenogramApp() {
         resetEditorState([], [], []);
         setView('editor');
     };
+    // --- CARTIGLIO: area di parcheggio per persone create dalle mappe Minuchin ---
+    const STAGING = { x: CENTER_POS - 760, y: CENTER_POS - 520, cols: 3, dx: 110, dy: 120 };
+    const stagingBounds = { x1: STAGING.x - 30, y1: STAGING.y - 30, x2: STAGING.x + STAGING.cols * STAGING.dx + 10, y2: STAGING.y + 8 * STAGING.dy };
+    const addPersonFromMap = (name: string, gender: Gender): string => {
+        const inStaging = nodesRef.current.filter(n => n.x >= stagingBounds.x1 && n.x <= stagingBounds.x2 && n.y >= stagingBounds.y1 && n.y <= stagingBounds.y2);
+        const i = inStaging.length;
+        const id = generateId();
+        const n = { id, x: STAGING.x + (i % STAGING.cols) * STAGING.dx, y: STAGING.y + Math.floor(i / STAGING.cols) * STAGING.dy, gender, name, birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
+        updateNodes(prev => [...prev, n as GenNode]);
+        return id;
+    };
+
     const addNodeAtCenter = (gender: Gender) => { const n = { id: generateId(), x: CENTER_POS, y: CENTER_POS, gender, name: 'Nuovo', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] }; updateNodes(prev => [...prev, n]); setSelectedNodeIds([n.id]); };
 
     const addNodeAtPos = (gender: Gender, x: number, y: number) => {
@@ -2320,7 +2332,7 @@ export default function GenogramApp() {
 
             {showDesigner && <StyleDesignerModal onClose={() => setShowDesigner(false)} onSave={(p) => setCustomPresets(prev => [...prev, p])} />}
             {showReport && <ReportModal onClose={() => setShowReport(false)} nodes={nodes} edges={edges} groups={groups} />}
-            {showMinuchin && <MinuchinManager maps={structuralMaps} nodes={nodes} edges={edges} selectedNodeIds={selectedNodeIds} darkMode={darkMode} onChange={setStructuralMaps} onClose={() => setShowMinuchin(false)} />}
+            {showMinuchin && <MinuchinManager maps={structuralMaps} nodes={nodes} edges={edges} selectedNodeIds={selectedNodeIds} darkMode={darkMode} theme={currentTheme} onChange={setStructuralMaps} onClose={() => setShowMinuchin(false)} onCreatePerson={addPersonFromMap} />}
             {/* --- INCOLLA QUI IL BLOCCO SPOSTATO --- */}
             {showReportConfig && (
                 <ReportConfigModal
@@ -2641,6 +2653,23 @@ export default function GenogramApp() {
                                     if (snapToGrid) { nx = Math.round(nx / SNAP_SIZE) * SNAP_SIZE; ny = Math.round(ny / SNAP_SIZE) * SNAP_SIZE; }
                                     return <rect key={nid} x={nx} y={ny} width={NODE_WIDTH} height={NODE_HEIGHT} fill="none" stroke="gray" strokeDasharray="2,2" />
                                 })}
+
+                                {/* CARTIGLIO: cornice attorno alle persone in attesa di assegnazione */}
+                                {(() => {
+                                    const staged = nodes.filter(n => n.x >= stagingBounds.x1 && n.x <= stagingBounds.x2 && n.y >= stagingBounds.y1 && n.y <= stagingBounds.y2);
+                                    if (!staged.length) return null;
+                                    const maxY = Math.max(...staged.map(n => n.y)) + NODE_HEIGHT;
+                                    const w = STAGING.cols * STAGING.dx + 30;
+                                    const acc = currentTheme.colors.accent;
+                                    return (
+                                        <g pointerEvents="none">
+                                            <rect x={STAGING.x - 35} y={STAGING.y - 48} width={w} height={maxY - STAGING.y + 88} rx={16}
+                                                fill={acc} fillOpacity={0.05} stroke={acc} strokeOpacity={0.55} strokeWidth={1.5} strokeDasharray="8,6" />
+                                            <text x={STAGING.x - 35 + w / 2} y={STAGING.y - 26} textAnchor="middle" fontSize={12} fontWeight={700} fill={acc} letterSpacing={1}>CARTIGLIO</text>
+                                            <text x={STAGING.x - 35 + w / 2} y={STAGING.y - 12} textAnchor="middle" fontSize={9} fill={currentTheme.colors.textMuted}>trascina le persone nel genogramma per assegnarle</text>
+                                        </g>
+                                    );
+                                })()}
 
                                 {/* NODI */}
                                 {nodes.map(n => {
