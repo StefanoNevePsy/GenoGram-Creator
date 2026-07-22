@@ -623,7 +623,8 @@ export const ReportConfigModal = ({ onClose, onConfirm }: { onClose: () => void,
         showGroups: true,
         showFamily: true,
         showRelations: true,
-        showNotes: true
+        showNotes: true,
+        showMaps: true
     });
 
     const toggle = (key: keyof ReportOptions) => setOptions(prev => ({ ...prev, [key]: !prev[key] }));
@@ -693,6 +694,10 @@ export const ReportConfigModal = ({ onClose, onConfirm }: { onClose: () => void,
                             <label className="flex items-center gap-2 cursor-pointer theme-text text-sm">
                                 <input type="checkbox" checked={options.showNotes} onChange={() => toggle('showNotes')} className="accent-[var(--theme-accent)]" />
                                 <span>Diario Clinico / Note</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer theme-text text-sm">
+                                <input type="checkbox" checked={options.showMaps !== false} onChange={() => toggle('showMaps')} className="accent-[var(--theme-accent)]" />
+                                <span>Mappe Strutturali (Minuchin)</span>
                             </label>
                         </div>
                     </div>

@@ -37,7 +37,7 @@ import { useAutosave } from './hooks/useAutosave';
 import { usePinchZoom } from './hooks/useZoomPan';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useCanvasInteraction } from './hooks/useCanvasInteraction';
-import { MinuchinManager } from './components/minuchin';
+import { MinuchinManager, MinuchinOverlay, mapToSvgString } from './components/minuchin';
 import { readLocalIndex, readFullGenogram, removeLocalGenogram, persistImportedLocally, downloadJsonFile } from './services/storage';
 
 
@@ -55,6 +55,7 @@ export default function GenogramApp() {
     const [stickyNotes, setStickyNotes] = useState<StickyNoteData[]>([]);
     const [structuralMaps, setStructuralMaps] = useState<StructuralMap[]>([]);
     const [showMinuchin, setShowMinuchin] = useState(false);
+    const [overlayMapId, setOverlayMapId] = useState<string | null>(null);
     const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
     const [showReportConfig, setShowReportConfig] = useState(false);
 
@@ -1403,6 +1404,10 @@ export default function GenogramApp() {
 
             // Genera il contenuto testuale usando le opzioni
             const reportHtml = generateReportHTML(nodes, edges, groups, options);
+            const mapsHtml = (options.showMaps && structuralMaps.length > 0)
+                ? `<h2 style="margin-top:24px">Mappe Strutturali (Minuchin)</h2>` + structuralMaps.map(mp =>
+                    `<div class="person-card"><h3>${mp.label}</h3>${mapToSvgString(mp, nodes)}</div>`).join('')
+                : '';
 
             // Genera Legenda (Recuperata dai dati attuali)
             const usedRelTypes = Array.from(new Set(edges.map(e => e.type)));
@@ -1486,6 +1491,7 @@ export default function GenogramApp() {
                   
                   <h2 style="margin-top:30px; border-bottom:1px solid #eee;">Dettaglio Clinico</h2>
                   ${reportHtml}
+                  ${mapsHtml}
               </body>
               </html>
           `);
@@ -1737,7 +1743,7 @@ export default function GenogramApp() {
 
             {showDesigner && <StyleDesignerModal onClose={() => setShowDesigner(false)} onSave={(p) => setCustomPresets(prev => [...prev, p])} />}
             {showReport && <ReportModal onClose={() => setShowReport(false)} nodes={nodes} edges={edges} groups={groups} />}
-            {showMinuchin && <MinuchinManager maps={structuralMaps} nodes={nodes} edges={edges} selectedNodeIds={selectedNodeIds} darkMode={darkMode} theme={currentTheme} onChange={setStructuralMaps} onClose={() => setShowMinuchin(false)} onCreatePerson={addPersonFromMap} />}
+            {showMinuchin && <MinuchinManager maps={structuralMaps} nodes={nodes} edges={edges} groups={groups} selectedNodeIds={selectedNodeIds} darkMode={darkMode} theme={currentTheme} onChange={setStructuralMaps} onClose={() => setShowMinuchin(false)} onCreatePerson={addPersonFromMap} overlayMapId={overlayMapId} onOverlayChange={setOverlayMapId} />}
             {/* --- INCOLLA QUI IL BLOCCO SPOSTATO --- */}
             {showReportConfig && (
                 <ReportConfigModal
@@ -2074,6 +2080,12 @@ export default function GenogramApp() {
                                             <text x={STAGING.x - 35 + w / 2} y={STAGING.y - 12} textAnchor="middle" fontSize={9} fill={currentTheme.colors.textMuted}>trascina le persone nel genogramma per assegnarle</text>
                                         </g>
                                     );
+                                })()}
+
+                                {/* OVERLAY MINUCHIN: relazioni della mappa scelta sopra il genogramma */}
+                                {overlayMapId && (() => {
+                                    const mp = structuralMaps.find(x => x.id === overlayMapId);
+                                    return mp ? <MinuchinOverlay map={mp} nodes={nodes} /> : null;
                                 })()}
 
                                 {/* NODI */}

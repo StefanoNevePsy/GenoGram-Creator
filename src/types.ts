@@ -26,13 +26,16 @@ export type MinuchinRelationType = 'alliance' | 'overinvolvement' | 'conflict' |
 export type BoundaryStyle = 'clear' | 'diffuse' | 'rigid' | 'none';
 export interface MinuchinRelation { id: string; fromId: string; toId: string; type: MinuchinRelationType; thirdId?: string; }
 export interface VerticalBoundary { id: string; x: number; style: BoundaryStyle; }
+export interface HorizontalBoundary { id: string; y: number; style: BoundaryStyle; }
 export interface StructuralMap {
     id: string;
     label: string;
+    style?: 'grid' | 'minimal';                // minimal = schizzo compatto senza fasce
     memberIds: string[];
-    positions: Record<string, { x: number, level: number }>;
-    boundaries: Record<number, BoundaryStyle>; // stile del confine sotto ogni livello
+    positions: Record<string, { x: number, level: number, y?: number }>; // y libera in stile minimal
+    boundaries: Record<number, BoundaryStyle>; // (grid) stile del confine sotto ogni livello
     vBoundaries?: VerticalBoundary[];          // confini verticali tra sottosistemi
+    hBoundaries?: HorizontalBoundary[];        // (minimal) confini orizzontali liberi
     relations: MinuchinRelation[];
     notes: NoteItem[];
 }
@@ -67,4 +70,5 @@ export interface ReportOptions {
     showFamily: boolean;
     showRelations: boolean;
     showNotes: boolean;
+    showMaps?: boolean;           // includi le mappe strutturali Minuchin
 }

@@ -61,9 +61,20 @@ references) — non usarlo come verifica.
       inclusi. Verificato end-to-end con Playwright (8 passi, 0 errori console).
 
 ## Da fare (sessioni future)
-- [ ] **Minuchin v2 (idee)**: overlay Minuchin sul canvas del genogramma (toggle);
-      mappe multiple T0/T1 con vista confronto; creazione da gruppo household;
-      inclusione delle mappe nel report clinico stampabile.
+- [x] **Minuchin v4 — stile "minimale" + idee future TUTTE implementate**:
+      - Stile 'minimal' (default per le nuove mappe): canvas compatto 560x400 senza
+        fasce, posizionamento LIBERO anche verticale, confini orizzontali e
+        verticali trascinabili/ciclabili/eliminabili; toggle Minimale⇄Griglia in
+        editor con conversione proporzionale di posizioni e confini.
+      - Miniature read-only (MapThumb) nel manager, badge "minimale".
+      - Confronto T0/T1: seleziona 2 mappe (icona colonne) → vista affiancata.
+      - Creazione da gruppo household (bottoni "Da gruppo: ...").
+      - Overlay sul genogramma: icona occhio nel manager → le relazioni Minuchin
+        della mappa si disegnano sopra i nodi del canvas (viola, non interattive).
+      - Report clinico: checkbox "Mappe Strutturali" → ogni mappa entra nel PDF
+        come SVG monocromo autonomo (mapToSvgString).
+      Verificato e2e: 10 check (canvas compatto, niente fasce, persone al volo,
+      conversione stile, miniature, confronto, overlay), zero errori.
 - [x] **Fase 5 (prima parte)** — `hooks/useZoomPan.ts` (usePinchZoom: trackpad
       pinch + Ctrl/rotella, clamp condiviso) estratto e verificato live.
       Costruito l'harness per il resto: `scripts/e2e-smoke.cjs` (`npm run test:e2e`
