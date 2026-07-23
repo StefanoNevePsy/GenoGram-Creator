@@ -12,6 +12,7 @@ import type { RelationEdge, NodeGroup, StickyNoteData } from '../types';
 import type { GenNode } from '../types';
 import { CANVAS_SIZE, NODE_WIDTH, SNAP_SIZE } from '../config/constants';
 import { generateId } from '../utils/genogram';
+import { getGroupBounds, getGroupGeometry, getPointOnOrganicPerimeter } from '../utils/geometry';
 
 interface CanvasDeps {
     containerRef: React.RefObject<HTMLDivElement | null>;
@@ -378,6 +379,24 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
             }
 
             // E. TRASFORMAZIONE HANDLE (SPOUSE, CHILD, PARENTS, LINK) E GROUP
+            else if (dragRef.current.type === 'edge-anchor') {
+                // Scorri l'ancora della relazione lungo il perimetro del gruppo:
+                // campiona la curva organica e scegli la t più vicina al cursore
+                const g = groupsRef.current.find(gr => gr.id === dragRef.current!.anchorGroupId);
+                const geom = g ? getGroupGeometry(g, nodesRef.current) : null;
+                if (geom) {
+                    let bestT = 0, bestD = Infinity;
+                    for (let i = 0; i <= 200; i++) {
+                        const t = i / 200;
+                        const p = getPointOnOrganicPerimeter(geom.controlPoints, t);
+                        const d2 = (p.x - x) ** 2 + (p.y - y) ** 2;
+                        if (d2 < bestD) { bestD = d2; bestT = t; }
+                    }
+                    const key = dragRef.current.anchorEnd === 'from' ? 'fromAnchor' : 'toAnchor';
+                    const edgeId = dragRef.current.sourceId;
+                    setEdges(prev => prev.map(ed => ed.id === edgeId ? { ...ed, [key]: bestT } : ed));
+                }
+            }
             else if (['spouse', 'child', 'parents', 'link', 'group-label', 'group-padding', 'transform-scale', 'transform-rotate'].includes(dragRef.current.type)) {
                 if (dragRef.current.type === 'group-padding') {
                     const dx = x - startX;
@@ -410,7 +429,7 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
 
             if (!dragRef.current || !dragRef.current.active) return;
 
-            const wasMoving = dragRef.current.type === 'move' || dragRef.current.type === 'move-note' || dragRef.current.type === 'group-label' || dragRef.current.type === 'group-padding' || dragRef.current.type === 'transform-scale' || dragRef.current.type === 'transform-rotate' || dragRef.current.type === 'selection-group';
+            const wasMoving = dragRef.current.type === 'move' || dragRef.current.type === 'move-note' || dragRef.current.type === 'group-label' || dragRef.current.type === 'group-padding' || dragRef.current.type === 'transform-scale' || dragRef.current.type === 'transform-rotate' || dragRef.current.type === 'selection-group' || dragRef.current.type === 'edge-anchor';
             if (wasMoving) {
                 // Salva storia alla fine del drag
                 pushState(nodesRef.current, edgesRef.current, groupsRef.current, stickyNotesRef.current);
@@ -456,28 +475,48 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
             // E. DROP RELATIONSHIPS E MANIGLIE
             if (['spouse', 'child', 'parents', 'link'].includes(dragRef.current.type)) {
                 const { currX, currY, sourceId, type } = dragRef.current;
+                // Per 'link' la hit-box è stretta (solo il simbolo): così droppando
+                // sul blob di un gruppo vince il gruppo, non il membro vicino
+                const pad = type === 'link' ? 5 : 20;
+                const padBelow = type === 'link' ? 45 : 80;
                 const targetNode = nodesRef.current.find(n =>
-                    currX >= n.x - 20 && currX <= n.x + 80 &&
-                    currY >= n.y - 20 && currY <= n.y + 80 &&
+                    currX >= n.x - pad && currX <= n.x + padBelow &&
+                    currY >= n.y - pad && currY <= n.y + padBelow &&
                     n.id !== sourceId
                 );
+                // Bersaglio GRUPPO (solo per relazioni generiche 'link'):
+                // hit-test sul bounding box del blob
+                const targetGroup = (!targetNode && type === 'link')
+                    ? groupsRef.current.find(g => {
+                        if (g.id === sourceId) return false;
+                        const b = getGroupBounds(g, nodesRef.current);
+                        return !!b && currX >= b.x && currX <= b.x + b.w && currY >= b.y && currY <= b.y + b.h;
+                    })
+                    : undefined;
 
                 const srcNode = nodesRef.current.find(n => n.id === sourceId);
+                // Sorgente GRUPPO: la maniglia gialla dei gruppi avvia drag 'link'
+                const srcGroup = !srcNode ? groupsRef.current.find(g => g.id === sourceId) : undefined;
+                const target = targetNode || targetGroup;
 
-                if (targetNode && srcNode) {
+                if (target && (srcNode || srcGroup)) {
                     let fromId = sourceId;
-                    let toId = targetNode.id;
+                    let toId = target.id;
                     let relType = 'friendship';
+                    const involvesGroup = !!srcGroup || !!targetGroup;
 
-                    if (type === 'spouse') relType = 'marriage';
-                    else if (type === 'child') { relType = 'child-bio'; }
-                    else if (type === 'parents') { fromId = targetNode.id; toId = sourceId; relType = 'child-bio'; }
+                    if (!involvesGroup) {
+                        if (type === 'spouse') relType = 'marriage';
+                        else if (type === 'child') { relType = 'child-bio'; }
+                        else if (type === 'parents') { fromId = target.id; toId = sourceId; relType = 'child-bio'; }
+                    }
 
                     const newE = { id: generateId(), fromId, toId, type: relType, label: '', notes: [] };
                     const newEdges = [...edgesRef.current, newE];
                     setEdges(newEdges);
                     pushState(nodesRef.current, newEdges, groupsRef.current, stickyNotes);
-                    setQuickMenu({ x: e.clientX, y: e.clientY, edgeId: newE.id, mode: type as any });
+                    setSelectedEdgeIds([newE.id]);
+                    setQuickMenu({ x: e.clientX, y: e.clientY, edgeId: newE.id, mode: involvesGroup ? 'link' : type as any });
                 } else if (srcNode) {
                     // Click in vuoto o drag brevissimo < 10px -> SPAWN
                     const isClick = Math.hypot(currX - dragRef.current.startX, currY - dragRef.current.startY) < 10;

@@ -244,6 +244,7 @@ export default function GenogramApp() {
         active: boolean, type: string, sourceId: string,
         startX: number, startY: number, currX: number, currY: number,
         initialNodePositions?: any,
+        anchorEnd?: 'from' | 'to', anchorGroupId?: string,
         clientStartX?: number, clientStartY?: number,
         initialScrollLeft?: number, initialScrollTop?: number,
         initialPadding?: number,
@@ -1096,7 +1097,8 @@ export default function GenogramApp() {
         // FIX: Legenda in alto a sinistra (Top-Left Corner)
         if (showLegend) {
             // Stima altezza legenda
-            const usedGenders = new Set(nodes.map(n => n.gender)).size + (nodes.some(n => n.deceased) ? 1 : 0) + (nodes.some(n => n.indexPerson) ? 1 : 0);
+            const clinicalCount = [nodes.some(n => n.substanceAbuse), nodes.some(n => n.alcoholAbuse), nodes.some(n => n.mentalIssue), nodes.some(n => n.gayLesbian), nodes.some(n => n.behavioralAddiction), nodes.some(n => n.eatingDisorder), nodes.some(n => n.institutionalized), nodes.some(n => n.donorConceived), nodes.some(n => n.immigrationYear)].filter(Boolean).length;
+            const usedGenders = new Set(nodes.map(n => n.gender)).size + (nodes.some(n => n.deceased) ? 1 : 0) + (nodes.some(n => n.indexPerson) ? 1 : 0) + clinicalCount;
             const usedRels = new Set(edges.map(e => e.type)).size;
             const estimatedH = 80 + (Math.max(usedGenders, usedRels) * 24) + 20;
 
@@ -2054,6 +2056,44 @@ export default function GenogramApp() {
                                     return <g key={e.id} onClick={(ev) => { ev.stopPropagation(); handleEdgeClick(e.id, ev); }}><ConnectionLine edge={e} start={start} end={end} isSelected={selectedEdgeIds.includes(e.id)} darkMode={darkMode} customConfig={customConf} onAddChild={(ev: any, eid: string) => handleEdgeAction(ev, eid)} isTargetGroup={groups.some(g => g.id === e.toId)} tNode={tNode} /></g>
                                 })}
 
+                                {/* MANIGLIE ANCORA: relazione selezionata con estremo su un gruppo.
+                                    Trascina il pallino per far scorrere il punto di aggancio lungo
+                                    il perimetro organico del gruppo. */}
+                                {selectedEdgeIds.length === 1 && (() => {
+                                    const ed = edges.find(x => x.id === selectedEdgeIds[0]);
+                                    if (!ed) return null;
+                                    const acc = currentTheme.colors.accent;
+                                    const ends: ('from' | 'to')[] = ['from', 'to'];
+                                    return <g>{ends.map(end => {
+                                        const gid = end === 'from' ? ed.fromId : ed.toId;
+                                        const g = groups.find(x => x.id === gid);
+                                        if (!g) return null;
+                                        const geom = getGroupGeometry(g, nodes);
+                                        if (!geom) return null;
+                                        const t = end === 'from' ? ed.fromAnchor : ed.toAnchor;
+                                        const p = t !== undefined
+                                            ? getPointOnOrganicPerimeter(geom.controlPoints, t)
+                                            : getClosestPointOnPolygon(geom.expandedPoints, getEntityCenter(end === 'from' ? ed.toId : ed.fromId, nodes, groups) || { x: geom.cx + 100, y: geom.cy });
+                                        return (
+                                            <g key={end} transform={`translate(${p.x}, ${p.y})`} className="cursor-move" style={{ touchAction: 'none' }}
+                                                onPointerDown={(e) => {
+                                                    e.stopPropagation(); e.preventDefault();
+                                                    dragRef.current = {
+                                                        active: true, type: 'edge-anchor', sourceId: ed.id,
+                                                        anchorEnd: end, anchorGroupId: gid,
+                                                        startX: p.x, startY: p.y, currX: p.x, currY: p.y,
+                                                        pointerId: e.pointerId
+                                                    };
+                                                    setDragState({ ...dragRef.current });
+                                                }}>
+                                                <circle r={9} fill={acc} stroke="white" strokeWidth={2} style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.35))' }} />
+                                                <circle r={3} fill="white" />
+                                                <title>Trascina per spostare l'aggancio sul perimetro</title>
+                                            </g>
+                                        );
+                                    })}</g>;
+                                })()}
+
                                 {/* DRAG LINES */}
                                 {dragState && dragState.type !== 'move' && dragState.type !== 'box' && dragState.type !== 'pan' && (<line x1={dragState.startX} y1={dragState.startY} x2={dragState.currX} y2={dragState.currY} stroke="gray" strokeDasharray="5,5" />)}
                                 {dragState && dragState.type === 'move' && selectedNodeIds.map(nid => {
@@ -2131,12 +2171,14 @@ export default function GenogramApp() {
                                     const geom = getGroupGeometry(g, nodes);
                                     if (!geom) return null;
                                     const { cx, cy } = geom;
-                                    const currentPadding = g.customPadding || 50;
+                                    // Bordi REALI del blob: le maniglie stanno FUORI, mai sopra i membri
+                                    const blobMinX = Math.min(...geom.expandedPoints.map(p => p.x));
+                                    const blobMaxY = Math.max(...geom.expandedPoints.map(p => p.y));
 
                                     return (
                                         <g key={`handles-${g.id}`}>
-                                            {/* 1. Maniglia LINK (Gialla - Sinistra) */}
-                                            <g transform={`translate(${cx - currentPadding - 20}, ${cy})`}
+                                            {/* 1. Maniglia LINK (Gialla - Sinistra, fuori dal blob) */}
+                                            <g transform={`translate(${blobMinX - 18}, ${cy})`}
                                                 className="cursor-crosshair"
                                                 style={{ touchAction: 'none' }}
                                                 onPointerDown={(e) => {
@@ -2151,7 +2193,7 @@ export default function GenogramApp() {
                                             </g>
 
                                             {/* 2. Maniglia PADDING (Viola - Basso) */}
-                                            <g transform={`translate(${cx}, ${cy + currentPadding + 10})`}
+                                            <g transform={`translate(${cx}, ${blobMaxY + 14})`}
                                                 className="cursor-ns-resize"
                                                 style={{ touchAction: 'none' }}
                                                 onPointerDown={(e) => {
@@ -2161,7 +2203,7 @@ export default function GenogramApp() {
                                                     dragRef.current = {
                                                         active: true, type: 'group-padding', sourceId: g.id,
                                                         startX: x, startY: y, currX: x, currY: y,
-                                                        initialPadding: currentPadding,
+                                                        initialPadding: g.customPadding ?? 23,
                                                         pointerId: e.pointerId
                                                     } as any;
                                                     setDragState({ ...dragRef.current });

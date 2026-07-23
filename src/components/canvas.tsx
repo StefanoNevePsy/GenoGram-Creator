@@ -19,6 +19,36 @@ export const Legend = ({ x, y, darkMode, nodes, edges }: { x: number, y: number,
     const hasIndex = nodes.some(n => n.indexPerson);
     const usedRelTypes = Array.from(new Set(edges.map(e => e.type))).sort();
 
+    // Marcatori clinici: in legenda solo quelli effettivamente usati nel genogramma
+    const CLINICAL_MARKERS: { key: string, label: string, present: boolean }[] = [
+        { key: 'substanceAbuse', label: 'Abuso Droghe', present: nodes.some(n => n.substanceAbuse) },
+        { key: 'alcoholAbuse', label: 'Abuso Alcol', present: nodes.some(n => n.alcoholAbuse) },
+        { key: 'mentalIssue', label: 'Problema Psicologico', present: nodes.some(n => n.mentalIssue) },
+        { key: 'gayLesbian', label: 'Omosessualità', present: nodes.some(n => n.gayLesbian) },
+        { key: 'behavioralAddiction', label: 'Dip. Comportamentale', present: nodes.some(n => n.behavioralAddiction) },
+        { key: 'eatingDisorder', label: 'Disturbo Alimentare', present: nodes.some(n => n.eatingDisorder) },
+        { key: 'institutionalized', label: 'Istituzionalizzato', present: nodes.some(n => n.institutionalized) },
+        { key: 'donorConceived', label: 'PMA / Donazione', present: nodes.some(n => n.donorConceived) },
+        { key: 'immigrationYear', label: 'Immigrazione', present: nodes.some(n => n.immigrationYear) },
+    ].filter(m => m.present);
+
+    // Mini-glifo 16x16 fedele al rendering del simbolo
+    const renderClinicalIcon = (key: string) => {
+        const box = <rect x="2" y="2" width="12" height="12" stroke={text} fill="none" />;
+        switch (key) {
+            case 'substanceAbuse': return <g>{box}<rect x="2.8" y="8" width="10.4" height="5.2" fill="#f97316" fillOpacity="0.85" /></g>;
+            case 'alcoholAbuse': return <g>{box}<rect x="2.8" y="8" width="10.4" height="5.2" fill="#92400e" fillOpacity="0.9" /></g>;
+            case 'mentalIssue': return <g>{box}<rect x="2.8" y="2.8" width="4" height="10.4" fill="#8b5cf6" fillOpacity="0.85" /></g>;
+            case 'gayLesbian': return <g>{box}<polygon points="5.5,9.5 10.5,9.5 8,13.2" fill="#ec4899" /></g>;
+            case 'behavioralAddiction': return <g>{box}<g stroke="#14b8a6" strokeWidth="1.4"><line x1="4" y1="9" x2="12" y2="9" /><line x1="4.5" y1="11" x2="11.5" y2="11" /><line x1="5" y1="13" x2="11" y2="13" /></g></g>;
+            case 'eatingDisorder': return <g>{box}<rect x="4" y="4" width="8" height="8" stroke="#e11d48" strokeWidth="1" strokeDasharray="2,1.5" fill="none" /></g>;
+            case 'institutionalized': return <g><rect x="4" y="4" width="8" height="8" stroke={text} fill="none" /><path d="M2.5,2 L0.5,2 L0.5,14 L2.5,14 M13.5,2 L15.5,2 L15.5,14 L13.5,14" stroke={text} strokeWidth="1.2" fill="none" /></g>;
+            case 'donorConceived': return <g>{box}<polygon points="8,4.5 11.5,11 4.5,11" stroke={text} strokeWidth="1" fill="none" /><text x="8" y="10.4" fontSize="5" fill={text} textAnchor="middle" fontWeight="700" fontFamily="sans-serif">D</text></g>;
+            case 'immigrationYear': return <g>{box}<line x1="5" y1="11" x2="11" y2="5" stroke={text} strokeWidth="1.4" /><polygon points="11,5 7.8,5.6 10.4,8.2" fill={text} /></g>;
+            default: return box;
+        }
+    };
+
     // 2. Layout Costanti
     const PADDING = 15;
     const ITEM_H = 24;
@@ -26,7 +56,7 @@ export const Legend = ({ x, y, darkMode, nodes, edges }: { x: number, y: number,
     const TITLE_H = 30;
 
     // Calcola altezza necessaria
-    const peopleCount = usedGenders.length + (hasDeceased ? 1 : 0) + (hasIndex ? 1 : 0);
+    const peopleCount = usedGenders.length + (hasDeceased ? 1 : 0) + (hasIndex ? 1 : 0) + CLINICAL_MARKERS.length;
     const relCount = usedRelTypes.length;
 
     // Logica layout: se tante relazioni, usa 2 colonne (Persone | Relazioni)
@@ -83,6 +113,13 @@ export const Legend = ({ x, y, darkMode, nodes, edges }: { x: number, y: number,
                             <text x="25" y="11" fill={text} fontSize="11" fontFamily="sans-serif">Paz. Designato</text>
                         </g>
                     )}
+                    {/* Condizioni cliniche usate nel genogramma */}
+                    {CLINICAL_MARKERS.map((m, i) => (
+                        <g key={m.key} transform={`translate(0, ${(usedGenders.length + (hasDeceased ? 1 : 0) + (hasIndex ? 1 : 0) + i) * ITEM_H})`}>
+                            {renderClinicalIcon(m.key)}
+                            <text x="25" y="11" fill={text} fontSize="11" fontFamily="sans-serif">{m.label}</text>
+                        </g>
+                    ))}
                 </g>
 
                 {/* Colonna Relazioni (spostata a destra se useTwoCols) */}

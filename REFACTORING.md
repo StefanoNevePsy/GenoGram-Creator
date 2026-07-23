@@ -127,6 +127,21 @@ references) — non usarlo come verifica.
       `npm run test:e2e:pen` (8 check: maniglie spouse/child, tasto destro,
       barrel web, evento nativo sPenNativeEvent simulato).
 
+- [x] **Relazioni con i GRUPPI + ancore scorrevoli**: il drop delle maniglie-relazione
+      ora riconosce i gruppi come bersaglio (hit-test sul bounding del blob) e come
+      sorgente (maniglia gialla) → nodo↔gruppo e gruppo↔gruppo funzionano; per i
+      drop 'link' la hit-box dei nodi è stretta al simbolo (il gruppo vince sul
+      bordo del blob). Le maniglie dei gruppi sono ancorate ai bordi REALI del blob
+      (prima usavano customPadding e finivano DENTRO, coperte dai membri — causa
+      storica del "non riesco a creare relazioni"). Edge selezionata con estremo su
+      gruppo → maniglia ancora trascinabile che scorre l'aggancio sul perimetro
+      organico (campionamento bestT, live + una entry di history al rilascio).
+      Test permanente scripts/e2e-groups.cjs (6 check, scenari isolati).
+- [x] **Legenda condizioni cliniche**: la legenda auto-generata ora include i
+      marcatori clinici usati (droghe, alcol, psicologico, omosessualità, dip.
+      comportamentale, dist. alimentare, istituzionalizzato, PMA, immigrazione)
+      con mini-glifi fedeli; stima altezza export aggiornata.
+
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.
 - Tipi puri con `import type` (verbatimModuleSyntax attivo).
