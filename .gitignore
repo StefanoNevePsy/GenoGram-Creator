@@ -1,1 +1,4 @@
 node_modules/
+
+# APK di test generato in sessione
+GenogramBuilder-monet-debug.apk
