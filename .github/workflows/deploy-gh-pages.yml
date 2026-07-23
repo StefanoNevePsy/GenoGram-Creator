@@ -1,5 +1,13 @@
 name: Deploy to GitHub Pages
 
+# Pubblica l'app su https://StefanoNevePsy.github.io/GenoGram-Creator/
+# - Automatico a ogni push su main.
+# - Manuale dalla tab Actions ("Run workflow"): puoi scegliere il branch,
+#   utile per pubblicare un branch di lavoro senza fare merge su main.
+#
+# Prerequisito una-tantum: Settings → Pages → Build and deployment →
+# Source = "GitHub Actions".
+
 on:
   push:
     branches: [main]
@@ -10,6 +18,7 @@ permissions:
   pages: write
   id-token: write
 
+# Un solo deploy alla volta; annulla quelli in coda già superati.
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -27,9 +36,19 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run build
+      # tsc + vite build. GITHUB_PAGES=true fa usare a Vite il base
+      # path "/GenoGram-Creator/" (vedi vite.config.ts).
+      - name: Build
+        run: npm run build
         env:
           GITHUB_PAGES: 'true'
+
+      # Fallback SPA: se si ricarica una URL profonda, GitHub Pages
+      # servirebbe un 404 statico. Copiando index.html in 404.html
+      # l'app riparte comunque (l'app usa stato interno, non routing URL,
+      # ma questa è una rete di sicurezza a costo zero).
+      - name: SPA fallback
+        run: cp dist/index.html dist/404.html
 
       - uses: actions/upload-pages-artifact@v3
         with:
