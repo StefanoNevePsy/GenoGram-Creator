@@ -25,8 +25,11 @@ export interface GenogramMeta { id: string; title: string; category: string; las
 export type MinuchinRelationType = 'alliance' | 'overinvolvement' | 'conflict' | 'coalition' | 'detouring';
 export type BoundaryStyle = 'clear' | 'diffuse' | 'rigid' | 'none';
 export interface MinuchinRelation { id: string; fromId: string; toId: string; type: MinuchinRelationType; thirdId?: string; }
-export interface VerticalBoundary { id: string; x: number; style: BoundaryStyle; }
-export interface HorizontalBoundary { id: string; y: number; style: BoundaryStyle; }
+// segStyles: stile per-segmento (indice sx→dx per orizzontali, alto→basso per
+// verticali) quando il confine è spezzato dalle intersezioni con confini
+// perpendicolari; assente = usa `style` di base.
+export interface VerticalBoundary { id: string; x: number; style: BoundaryStyle; segStyles?: Record<number, BoundaryStyle>; }
+export interface HorizontalBoundary { id: string; y: number; style: BoundaryStyle; segStyles?: Record<number, BoundaryStyle>; }
 export interface StructuralMap {
     id: string;
     label: string;

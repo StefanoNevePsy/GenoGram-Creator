@@ -35,6 +35,29 @@ const gridCY = (level: number) => bandTop(level) + DIMS.grid.band / 2 - 10;
 const memberCY = (m: StructuralMap, p: { level: number, y?: number }) =>
     mapStyle(m) === 'minimal' ? (p.y ?? DIMS.minimal.H / 2) : gridCY(p.level);
 
+// --- SEGMENTAZIONE CONFINI ---
+// Un confine si spezza dove lo attraversa un confine perpendicolare: ogni
+// segmento (delimitato da due intersezioni consecutive o dal bordo) può avere
+// uno stile proprio. Così: diffuso madre-figlio + rigido padre-figlio sulla
+// stessa linea orizzontale, divisi dalla verticale tra i genitori.
+export interface Segment { i: number; a: number; b: number; along: number; style: BoundaryStyle; }
+
+const vbCrossings = (m: StructuralMap, W: number): number[] =>
+    (m.vBoundaries || []).map(v => v.x).filter(x => x > 12 && x < W - 12).sort((p, q) => p - q);
+// Attraversamenti orizzontali di una verticale: confini liberi + (in grid) le righe di livello
+const hbCrossings = (m: StructuralMap, H: number): number[] => {
+    const ys = (m.hBoundaries || []).map(h => h.y);
+    if (mapStyle(m) === 'grid') for (let l = 0; l < LEVELS - 1; l++) if ((m.boundaries[l] ?? 'none') !== 'none') ys.push(bandTop(l + 1));
+    return ys.filter(y => y > 10 && y < H - 10).sort((p, q) => p - q);
+};
+export const segmentsOf = (m: StructuralMap, kind: 'hb' | 'vb', b: { y?: number, x?: number, style: BoundaryStyle, segStyles?: Record<number, BoundaryStyle> }, W: number, H: number): Segment[] => {
+    const cuts = kind === 'hb' ? vbCrossings(m, W) : hbCrossings(m, H);
+    const lo = kind === 'hb' ? 10 : 8, hi = kind === 'hb' ? W - 10 : H - 8;
+    const bounds = [lo, ...cuts, hi];
+    const along = (kind === 'hb' ? b.y : b.x) ?? 0;
+    return bounds.slice(0, -1).map((a, i) => ({ i, a, b: bounds[i + 1], along, style: b.segStyles?.[i] ?? b.style }));
+};
+
 const TOOLS: { key: MinuchinRelationType, label: string, needsThird: boolean }[] = [
     { key: 'alliance', label: 'Alleanza', needsThird: false },
     { key: 'overinvolvement', label: 'Invischiamento', needsThird: false },
@@ -148,8 +171,8 @@ export const MapThumb = ({ map, nodes, darkMode, theme, width = 220 }: {
                 const y = bandTop(l + 1);
                 return <line key={l} x1={14} y1={y} x2={d.W - 14} y2={y} stroke={c.text} strokeWidth={st === 'rigid' ? 2.6 : 1.6} strokeDasharray={boundaryDash(st)} strokeLinecap="round" />;
             })}
-            {(map.hBoundaries || []).map(hb => <line key={hb.id} x1={10} y1={hb.y} x2={d.W - 10} y2={hb.y} stroke={c.text} strokeWidth={hb.style === 'rigid' ? 2.6 : 1.6} strokeDasharray={boundaryDash(hb.style)} strokeLinecap="round" />)}
-            {(map.vBoundaries || []).map(vb => <line key={vb.id} x1={vb.x} y1={8} x2={vb.x} y2={d.H - 8} stroke={c.text} strokeWidth={vb.style === 'rigid' ? 2.6 : 1.6} strokeDasharray={boundaryDash(vb.style)} strokeLinecap="round" />)}
+            {(map.hBoundaries || []).flatMap(hb => segmentsOf(map, 'hb', hb, d.W, d.H).filter(s => s.style !== 'none').map(s => <line key={hb.id + s.i} x1={s.a} y1={s.along} x2={s.b} y2={s.along} stroke={c.text} strokeWidth={s.style === 'rigid' ? 2.6 : 1.6} strokeDasharray={boundaryDash(s.style)} strokeLinecap="round" />))}
+            {(map.vBoundaries || []).flatMap(vb => segmentsOf(map, 'vb', vb, d.W, d.H).filter(s => s.style !== 'none').map(s => <line key={vb.id + s.i} x1={s.along} y1={s.a} x2={s.along} y2={s.b} stroke={c.text} strokeWidth={s.style === 'rigid' ? 2.6 : 1.6} strokeDasharray={boundaryDash(s.style)} strokeLinecap="round" />))}
             {map.relations.map(r => <RelationGlyph key={r.id} rel={r} pt={center} stroke={c.text} accent={c.accent} />)}
             {members.map(n => {
                 const p = pos(n.id); const cy = memberCY(map, p);
@@ -190,8 +213,8 @@ export const mapToSvgString = (map: StructuralMap, nodes: GenNode[]): string => 
         const st = map.boundaries[l] ?? 'none';
         if (st !== 'none') parts.push(`<line x1="14" y1="${bandTop(l + 1)}" x2="${d.W - 14}" y2="${bandTop(l + 1)}" stroke="${stroke}" stroke-width="${st === 'rigid' ? 2.6 : 1.6}"${dash(st)} stroke-linecap="round"/>`);
     }
-    (map.hBoundaries || []).forEach(hb => parts.push(`<line x1="10" y1="${hb.y}" x2="${d.W - 10}" y2="${hb.y}" stroke="${stroke}" stroke-width="${hb.style === 'rigid' ? 2.6 : 1.6}"${dash(hb.style)} stroke-linecap="round"/>`));
-    (map.vBoundaries || []).forEach(vb => parts.push(`<line x1="${vb.x}" y1="8" x2="${vb.x}" y2="${d.H - 8}" stroke="${stroke}" stroke-width="${vb.style === 'rigid' ? 2.6 : 1.6}"${dash(vb.style)} stroke-linecap="round"/>`));
+    (map.hBoundaries || []).forEach(hb => segmentsOf(map, 'hb', hb, d.W, d.H).filter(s => s.style !== 'none').forEach(s => parts.push(`<line x1="${s.a}" y1="${s.along}" x2="${s.b}" y2="${s.along}" stroke="${stroke}" stroke-width="${s.style === 'rigid' ? 2.6 : 1.6}"${dash(s.style)} stroke-linecap="round"/>`)));
+    (map.vBoundaries || []).forEach(vb => segmentsOf(map, 'vb', vb, d.W, d.H).filter(s => s.style !== 'none').forEach(s => parts.push(`<line x1="${s.along}" y1="${s.a}" x2="${s.along}" y2="${s.b}" stroke="${stroke}" stroke-width="${s.style === 'rigid' ? 2.6 : 1.6}"${dash(s.style)} stroke-linecap="round"/>`)));
     map.relations.forEach(r => {
         const a = pt(r.fromId); const b = pt(r.toId);
         if (!a || !b) return;
@@ -351,11 +374,18 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
         const cur = prev.boundaries[level] ?? 'none';
         return { ...prev, boundaries: { ...prev.boundaries, [level]: BOUNDARY_CYCLE[(BOUNDARY_CYCLE.indexOf(cur) + 1) % BOUNDARY_CYCLE.length] } };
     });
-    const cycleFree = (kind: 'vb' | 'hb', id: string) => {
+    // Ciclo dello stile di UN SEGMENTO (clear→diffuse→rigid→none): none lo lascia
+    // vuoto, così si può "accorciare" un confine spegnendo i segmenti indesiderati.
+    const cycleSegment = (kind: 'vb' | 'hb', id: string, segIdx: number) => {
         if (dragRef.current?.moved) return;
+        const bump = <T extends { style: BoundaryStyle, segStyles?: Record<number, BoundaryStyle> }>(v: T): T => {
+            const cur = v.segStyles?.[segIdx] ?? v.style;
+            const next = BOUNDARY_CYCLE[(BOUNDARY_CYCLE.indexOf(cur) + 1) % BOUNDARY_CYCLE.length];
+            return { ...v, segStyles: { ...(v.segStyles || {}), [segIdx]: next } };
+        };
         setM(prev => kind === 'vb'
-            ? { ...prev, vBoundaries: (prev.vBoundaries || []).map(v => v.id === id ? { ...v, style: BOUNDARY_CYCLE[(BOUNDARY_CYCLE.indexOf(v.style) + 1) % 3] } : v) }
-            : { ...prev, hBoundaries: (prev.hBoundaries || []).map(v => v.id === id ? { ...v, style: BOUNDARY_CYCLE[(BOUNDARY_CYCLE.indexOf(v.style) + 1) % 3] } : v) });
+            ? { ...prev, vBoundaries: (prev.vBoundaries || []).map(v => v.id === id ? bump(v) : v) }
+            : { ...prev, hBoundaries: (prev.hBoundaries || []).map(v => v.id === id ? bump(v) : v) });
     };
     const removeFree = (kind: 'vb' | 'hb', id: string) => setM(prev => kind === 'vb'
         ? { ...prev, vBoundaries: (prev.vBoundaries || []).filter(v => v.id !== id) }
@@ -485,13 +515,15 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
                             );
                         })}
 
-                        {/* Confini liberi orizzontali (minimal) */}
+                        {/* Confini liberi orizzontali — un segmento per intersezione */}
                         {(m.hBoundaries || []).map(hb => (
                             <g key={hb.id}>
-                                <g onPointerDown={e => onBoundaryDown(e, 'hb', hb.id)} onClick={() => cycleFree('hb', hb.id)} className="cursor-ns-resize">
-                                    <line x1={10} y1={hb.y} x2={d.W - 10} y2={hb.y} stroke="transparent" strokeWidth={16} />
-                                    <line x1={10} y1={hb.y} x2={d.W - 10} y2={hb.y} stroke={stroke} strokeWidth={hb.style === 'rigid' ? 2.6 : 1.6} strokeDasharray={boundaryDash(hb.style)} strokeLinecap="round" />
-                                </g>
+                                {segmentsOf(m, 'hb', hb, d.W, d.H).map(seg => (
+                                    <g key={seg.i} onPointerDown={e => onBoundaryDown(e, 'hb', hb.id)} onClick={() => cycleSegment('hb', hb.id, seg.i)} className="cursor-ns-resize">
+                                        <line x1={seg.a} y1={seg.along} x2={seg.b} y2={seg.along} stroke="transparent" strokeWidth={16} />
+                                        {seg.style !== 'none' && <line x1={seg.a} y1={seg.along} x2={seg.b} y2={seg.along} stroke={stroke} strokeWidth={seg.style === 'rigid' ? 2.6 : 1.6} strokeDasharray={boundaryDash(seg.style)} strokeLinecap="round" />}
+                                    </g>
+                                ))}
                                 <g data-ui="1" onClick={() => removeFree('hb', hb.id)} className="cursor-pointer">
                                     <circle cx={14} cy={hb.y} r={7} fill={c.bgPanel} stroke={muted} strokeWidth={0.8} />
                                     <path d={`M ${14 - 2.6} ${hb.y - 2.6} L ${14 + 2.6} ${hb.y + 2.6} M ${14 + 2.6} ${hb.y - 2.6} L ${14 - 2.6} ${hb.y + 2.6}`} stroke={c.text} strokeWidth={1.3} />
@@ -499,13 +531,15 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
                             </g>
                         ))}
 
-                        {/* Confini verticali */}
+                        {/* Confini verticali — un segmento per intersezione */}
                         {(m.vBoundaries || []).map(vb => (
                             <g key={vb.id}>
-                                <g onPointerDown={e => onBoundaryDown(e, 'vb', vb.id)} onClick={() => cycleFree('vb', vb.id)} className="cursor-ew-resize">
-                                    <line x1={vb.x} y1={8} x2={vb.x} y2={d.H - 8} stroke="transparent" strokeWidth={16} />
-                                    <line x1={vb.x} y1={8} x2={vb.x} y2={d.H - 8} stroke={stroke} strokeWidth={vb.style === 'rigid' ? 2.6 : 1.6} strokeDasharray={boundaryDash(vb.style)} strokeLinecap="round" />
-                                </g>
+                                {segmentsOf(m, 'vb', vb, d.W, d.H).map(seg => (
+                                    <g key={seg.i} onPointerDown={e => onBoundaryDown(e, 'vb', vb.id)} onClick={() => cycleSegment('vb', vb.id, seg.i)} className="cursor-ew-resize">
+                                        <line x1={seg.along} y1={seg.a} x2={seg.along} y2={seg.b} stroke="transparent" strokeWidth={16} />
+                                        {seg.style !== 'none' && <line x1={seg.along} y1={seg.a} x2={seg.along} y2={seg.b} stroke={stroke} strokeWidth={seg.style === 'rigid' ? 2.6 : 1.6} strokeDasharray={boundaryDash(seg.style)} strokeLinecap="round" />}
+                                    </g>
+                                ))}
                                 <g data-ui="1" onClick={() => removeFree('vb', vb.id)} className="cursor-pointer">
                                     <circle cx={vb.x} cy={14} r={7} fill={c.bgPanel} stroke={muted} strokeWidth={0.8} />
                                     <path d={`M ${vb.x - 2.6} ${14 - 2.6} L ${vb.x + 2.6} ${14 + 2.6} M ${vb.x + 2.6} ${14 - 2.6} L ${vb.x - 2.6} ${14 + 2.6}`} stroke={c.text} strokeWidth={1.3} />
@@ -550,6 +584,7 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
                         <span className="flex items-center gap-1.5"><svg width={34} height={14}><line x1={2} y1={7} x2={32} y2={7} stroke={muted} strokeWidth={1.5} strokeDasharray="8,5" /></svg>Confine chiaro</span>
                         <span className="flex items-center gap-1.5"><svg width={34} height={14}><line x1={2} y1={7} x2={32} y2={7} stroke={muted} strokeWidth={1.5} strokeDasharray="2,4" /></svg>Diffuso</span>
                         <span className="flex items-center gap-1.5"><svg width={34} height={14}><line x1={2} y1={7} x2={32} y2={7} stroke={muted} strokeWidth={2.4} /></svg>Rigido</span>
+                        <span className="italic">Clicca un tratto di confine (tra due incroci) per cambiarne stile — spegnendolo lo accorci.</span>
                     </div>
                 </div>
             </div>

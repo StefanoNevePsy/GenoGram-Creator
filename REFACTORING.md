@@ -112,6 +112,13 @@ references) — non usarlo come verifica.
       canvas/panels/modals sono coesi, non impattano tree-shaking né i gate, e
       lo split aggiungerebbe solo churn di import. Riaprire solo se un cluster
       supera ~1.500 righe o va condiviso fuori dall'app.
+- [x] **Confini a segmenti (Minuchin)**: un confine si spezza dove lo attraversa
+      un confine perpendicolare; ogni segmento (tra due incroci o il bordo) ha uno
+      stile proprio (clear→diffuse→rigid→none, con none per accorciarlo). Permette
+      es. diffuso madre-figlio + rigido padre-figlio sulla stessa linea, o rigido
+      genitori/figli attraversato da un verticale coppia. `segmentsOf` esportata e
+      coperta da 5 unit test (30 totali); rendering condiviso da editor/miniature/
+      overlay/SVG report. Verificato e2e sulla build di produzione.
 - [x] **CI**: workflow GitHub Actions (`.github/workflows/ci.yml`) con i tre gate.
 - [x] **Fix S-Pen / tasto destro** (conflitti storici): guard su e.button in
       handleCanvasDown (barrel/destro → menu contestuale, MAI box-select fantasma);
