@@ -1072,7 +1072,7 @@ export default function GenogramApp() {
     const getContentBounds = useCallback(() => {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-        if (nodes.length === 0) {
+        if (nodes.length === 0 && stickyNotes.length === 0) {
             return { minX: CENTER_POS - 400, minY: CENTER_POS - 300, maxX: CENTER_POS + 400, maxY: CENTER_POS + 300 };
         }
 
@@ -1088,8 +1088,15 @@ export default function GenogramApp() {
                 maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
             }
         });
+
+        // Le sticky notes fanno parte del contenuto: senza questo venivano
+        // TAGLIATE negli export (PNG/SVG/PDF) e ignorate dal fit-view
+        stickyNotes.forEach(sn => {
+            minX = Math.min(minX, sn.x); minY = Math.min(minY, sn.y);
+            maxX = Math.max(maxX, sn.x + (sn.width || 0)); maxY = Math.max(maxY, sn.y + (sn.height || 0));
+        });
         return { minX, minY, maxX, maxY };
-    }, [nodes, groups]);
+    }, [nodes, groups, stickyNotes]);
 
     const getGraphBounds = () => {
         let { minX, minY, maxX, maxY } = getContentBounds();

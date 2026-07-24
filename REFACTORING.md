@@ -142,6 +142,20 @@ references) — non usarlo come verifica.
       comportamentale, dist. alimentare, istituzionalizzato, PMA, immigrazione)
       con mini-glifi fedeli; stima altezza export aggiornata.
 
+- [x] **Export bounds con sticky notes**: `getContentBounds` considerava solo
+      nodi e gruppi → le note lontane venivano TAGLIATE in PNG/SVG/PDF e ignorate
+      dal fit-view (Ctrl+0). Ora includono anche `stickyNotes` (x,y,width,height);
+      il fallback "canvas vuoto" scatta solo senza nodi E senza note.
+      Test: scripts/e2e-export-bounds.cjs (legge il viewBox reale dell'SVG esportato).
+- [x] **Decoratori perpendicolari alla linea**: cutoff, cutoff-double,
+      cutoff-repaired-circle, oblique, oblique-double, x-cross,
+      oblique-double-crossed e triangle-up-center usavano coordinate assolute
+      (decX/decY) senza rotazione → restavano verticali su relazioni diagonali.
+      Ora sono disegnati nel sistema di riferimento della linea (centerArrowTrans,
+      che ruota di `angle`). Le linee strutturali hanno angle=0 → invariate.
+      Test: scripts/e2e-decorator-angle.cjs (stato iniettato: 0° su orizzontale,
+      -45° su diagonale). In LinePreview restano fissi: la legenda è orizzontale.
+
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.
 - Tipi puri con `import type` (verbatimModuleSyntax attivo).

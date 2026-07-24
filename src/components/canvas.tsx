@@ -333,7 +333,6 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
     const strokeDash = baseConfig.lineStyle === 'dashed' ? '8,4' : (baseConfig.lineStyle === 'dotted' ? '2,2' : '0');
 
     const Decorator = () => {
-        let decX = midX; let decY = midY;
 
         // FIX: Rendering specifico per Migliore Amico (Dotted centrale + 2 Solide esterne)
         // Disegniamo le due linee esterne SENZA strokeDasharray così rimangono solide
@@ -351,25 +350,27 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
         if (renderType === 'triple-zigzag') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-3,-3)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY)} stroke="red" strokeWidth={1.5} fill="none" /></g>;
         if (renderType === 'double' || renderType === 'double-zigzag' || renderType === 'best-friend') return <path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" strokeDasharray={strokeDash} />;
 
-        // NUOVI SIMBOLI (CORREZIONE ANGOLO /)
-        if (renderType === 'oblique') return <line x1={decX + 5} y1={decY - 10} x2={decX - 5} y2={decY + 10} stroke={stroke} strokeWidth={2} />;
-        if (renderType === 'oblique-double') return <g><line x1={decX + 2} y1={decY - 10} x2={decX - 8} y2={decY + 10} stroke={stroke} strokeWidth={2} /><line x1={decX + 8} y1={decY - 10} x2={decX - 2} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>;
-        if (renderType === 'x-cross') return <g><line x1={decX + 5} y1={decY - 10} x2={decX - 5} y2={decY + 10} stroke={stroke} strokeWidth={2} /><line x1={decX - 5} y1={decY - 10} x2={decX + 5} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>;
-        if (renderType === 'oblique-double-crossed') return <g>
-            <line x1={decX + 2} y1={decY - 10} x2={decX - 8} y2={decY + 10} stroke={stroke} strokeWidth={2} />
-            <line x1={decX + 8} y1={decY - 10} x2={decX - 2} y2={decY + 10} stroke={stroke} strokeWidth={2} />
-            <line x1={decX - 8} y1={decY - 10} x2={decX + 8} y2={decY + 10} stroke={stroke} strokeWidth={2} />
+        // NUOVI SIMBOLI — disegnati nel sistema di riferimento della linea
+        // (centerArrowTrans ruota di `angle`): i tagli restano PERPENDICOLARI
+        // anche su relazioni diagonali, non più verticali fissi.
+        if (renderType === 'oblique') return <g transform={centerArrowTrans}><line x1={5} y1={-10} x2={-5} y2={10} stroke={stroke} strokeWidth={2} /></g>;
+        if (renderType === 'oblique-double') return <g transform={centerArrowTrans}><line x1={2} y1={-10} x2={-8} y2={10} stroke={stroke} strokeWidth={2} /><line x1={8} y1={-10} x2={-2} y2={10} stroke={stroke} strokeWidth={2} /></g>;
+        if (renderType === 'x-cross') return <g transform={centerArrowTrans}><line x1={5} y1={-10} x2={-5} y2={10} stroke={stroke} strokeWidth={2} /><line x1={-5} y1={-10} x2={5} y2={10} stroke={stroke} strokeWidth={2} /></g>;
+        if (renderType === 'oblique-double-crossed') return <g transform={centerArrowTrans}>
+            <line x1={2} y1={-10} x2={-8} y2={10} stroke={stroke} strokeWidth={2} />
+            <line x1={8} y1={-10} x2={-2} y2={10} stroke={stroke} strokeWidth={2} />
+            <line x1={-8} y1={-10} x2={8} y2={10} stroke={stroke} strokeWidth={2} />
         </g>;
 
-        if (renderType === 'cutoff-double') return <g><line x1={decX - 3} y1={decY - 10} x2={decX - 3} y2={decY + 10} stroke={stroke} strokeWidth={2} /><line x1={decX + 3} y1={decY - 10} x2={decX + 3} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>;
-        if (renderType === 'cutoff') return <line x1={decX} y1={decY - 10} x2={decX} y2={decY + 10} stroke={stroke} strokeWidth={3} />;
-        if (renderType === 'cutoff-repaired-circle') return <g><line x1={decX - 4} y1={decY - 10} x2={decX - 14} y2={decY + 10} stroke={stroke} strokeWidth={2} /><circle cx={decX} cy={decY} r={5} fill="none" stroke={stroke} strokeWidth={1.5} /><line x1={decX + 14} y1={decY - 10} x2={decX + 4} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>;
+        if (renderType === 'cutoff-double') return <g transform={centerArrowTrans}><line x1={-3} y1={-10} x2={-3} y2={10} stroke={stroke} strokeWidth={2} /><line x1={3} y1={-10} x2={3} y2={10} stroke={stroke} strokeWidth={2} /></g>;
+        if (renderType === 'cutoff') return <g transform={centerArrowTrans}><line x1={0} y1={-10} x2={0} y2={10} stroke={stroke} strokeWidth={3} /></g>;
+        if (renderType === 'cutoff-repaired-circle') return <g transform={centerArrowTrans}><line x1={-4} y1={-10} x2={-14} y2={10} stroke={stroke} strokeWidth={2} /><circle cx={0} cy={0} r={5} fill="none" stroke={stroke} strokeWidth={1.5} /><line x1={14} y1={-10} x2={4} y2={10} stroke={stroke} strokeWidth={2} /></g>;
 
         if (renderType === 'dashed-inner') return <g><path d={pathD} stroke={stroke} strokeWidth={1.5} strokeDasharray="4,4" fill="none" transform={`translate(0, 6)`} /></g>;
 
         if (renderType === 'triple-zigzag-center') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(6,6)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-6,-6)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY, 4, 12)} stroke="red" strokeWidth={1.5} fill="none" /></g>;
 
-        if (renderType === 'triangle-up-center') return <polygon points="-6,0 6,0 0,-10" fill={stroke} transform={`translate(${midX},${midY})`} />;
+        if (renderType === 'triangle-up-center') return <polygon points="-6,0 6,0 0,-10" fill={stroke} transform={centerArrowTrans} />;
 
         if (renderType === 'double-arrow-inward') {
             const dx = actualEndX - start.x; const dy = actualEndY - start.y;
