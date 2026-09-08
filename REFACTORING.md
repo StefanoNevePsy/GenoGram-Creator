@@ -168,6 +168,33 @@ references) — non usarlo come verifica.
       Nuovi dati persona: disability, causeOfDeath, education, religion, ethnicity.
       Test: scripts/e2e-symbols.cjs (stato iniettato, 7 check).
 
+- [x] **Audit (codice + Impeccable critique) e correzioni**. Metodo: due assessment
+      isolati (design review; detector + evidenze browser misurate) + audit di codice.
+      Difetti REALI corretti:
+      - **P0 toolbar a larghezza 0 sotto i 1024px**: nell'header stava tra due blocchi
+        `shrink-0`, il contenitore `flex-1 min-w-0` collassava e TUTTI gli strumenti
+        erano inaccessibili (a 390px e 768px il click falliva: zero persone creabili,
+        app inutilizzabile sull'APK Android). Ora la barra ha una riga propria a piena
+        larghezza + sfumatura di scorrimento quando il contenuto trabocca.
+      - **P0 M/F non spawnavano dopo la prima persona**: guard `selectedNodeIds.length === 0`
+        mentre il nodo creato si auto-seleziona → no-op silenzioso (lo avevo perfino
+        aggirato con un Escape nei miei stessi test). Guard rimosso.
+      - **Menu relazioni**: 83 tipi in lista piatta (le categorie c'erano ma venivano
+        appiattite con un reduce) → intestazioni di categoria + campo di ricerca.
+      - **Conferme distruttive incoerenti**: "Elimina Persona" non chiedeva nulla
+        mentre Canc sì. Ora conferme che NOMINANO persona e relazioni travolte;
+        eliminazione genogramma nomina titolo e numero di persone.
+      - **Ctrl+S**: `alert()` sostituito da conferma effimera "SALVATO" nel pill di sync.
+      - **A11y**: 0 → tutti i bottoni con nome accessibile; `role="application"` +
+        aria-label sul canvas; prima regola `:focus-visible` del progetto (diversi
+        campi usavano `outline-none` senza sostituto); Escape chiude le modali.
+      - **Contrasto**: 7 etichette di categoria su 8 erano sotto AA (fino a 2.15:1);
+        il colore-categoria resta sull'icona, il testo torna leggibile.
+      Test: scripts/e2e-audit-fixes.cjs (11 check, misura il contrasto reale).
+      NON risolti (nel backlog): vista a lista/navigazione da tastiera tra i nodi,
+      raggruppamento del pannello persona, onboarding ed empty state, deduplica
+      icone, target touch < 44px, sidebar dashboard non collassabile a 390px.
+
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.
 - Tipi puri con `import type` (verbatimModuleSyntax attivo).

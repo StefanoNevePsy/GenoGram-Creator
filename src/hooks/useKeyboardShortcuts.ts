@@ -108,7 +108,10 @@ export const useKeyboardShortcuts = (d: KeyboardDeps) => {
             }
 
             // SPAWN RAPIDO SOTTO IL MOUSE (M/F) - FIX DEFINITIVO
-            if ((e.key.toLowerCase() === 'm' || e.key.toLowerCase() === 'f') && selectedNodeIds.length === 0 && !e.altKey && !e.ctrlKey) {
+            // NB: nessun guard sulla selezione. Prima era `selectedNodeIds.length === 0`,
+            // ma il nodo appena creato si auto-seleziona: dalla seconda pressione in poi
+            // M/F non facevano più nulla, in silenzio.
+            if ((e.key.toLowerCase() === 'm' || e.key.toLowerCase() === 'f') && !e.altKey && !e.ctrlKey) {
                 const { x, y } = getCursorGraphPos(); // <--- Usa la nuova funzione helper
                 addNodeAtPos(e.key.toLowerCase() === 'm' ? 'M' : 'F', x, y);
             }

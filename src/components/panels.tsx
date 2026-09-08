@@ -8,18 +8,24 @@ import { extractYear } from '../utils/dates';
 import { LinePreview } from './canvas';
 
 export const QuickRelMenu = ({ x, y, mode, customPresets, onSelect, onClose }: { x: number, y: number, mode: 'child' | 'spouse' | 'link' | 'parents', customPresets: CustomPreset[], onSelect: (type: string) => void, onClose: () => void }) => {
-    let relevantKeys: string[] = [];
-    if (mode === 'child' || mode === 'parents') relevantKeys = RELATION_CATEGORIES["Figli"] || [];
-    else if (mode === 'spouse') relevantKeys = RELATION_CATEGORIES["Struttura / Coppia"] || [];
-    else {
-        const cats = ['Interazione / Affettive', 'Conflitto e Distanza', 'Violenza, Abuso e Potere', 'Simboli (Immagini)'];
-        relevantKeys = cats.reduce((acc, cat) => acc.concat(RELATION_CATEGORIES[cat] || []), [] as string[]);
-    }
+    // Le categorie restano RAGGRUPPATE (prima venivano appiattite con un reduce:
+    // con 80+ tipi la lista piatta era impraticabile). Più campo di ricerca.
+    const [query, setQuery] = useState('');
+    const catNames: string[] = (mode === 'child' || mode === 'parents') ? ['Figli']
+        : mode === 'spouse' ? ['Struttura / Coppia']
+            : ['Interazione / Affettive', 'Conflitto e Distanza', 'Violenza, Abuso e Potere', 'Sociale / Contesto'];
 
-    const options = [
-        ...relevantKeys.map(key => { const conf = BASE_REL_CONFIG[key]; return conf ? { type: key, label: conf.label } : null; }).filter(Boolean),
-        ...customPresets.map(p => ({ type: p.id, label: p.name }))
-    ];
+    const q = query.trim().toLowerCase();
+    const groups = catNames.map(cat => ({
+        cat,
+        items: (RELATION_CATEGORIES[cat] || [])
+            .map(key => { const conf = BASE_REL_CONFIG[key]; return conf ? { type: key, label: conf.label } : null; })
+            .filter((o): o is { type: string, label: string } => !!o && (!q || o.label.toLowerCase().includes(q)))
+    })).filter(g => g.items.length > 0);
+    const customs = customPresets
+        .map(p => ({ type: p.id, label: p.name }))
+        .filter(o => !q || o.label.toLowerCase().includes(q));
+    const total = groups.reduce((n, g) => n + g.items.length, 0) + customs.length;
 
     const style: React.CSSProperties = { left: x, top: y };
     if (x > window.innerWidth - 260) style.left = x - 260;
@@ -29,15 +35,34 @@ export const QuickRelMenu = ({ x, y, mode, customPresets, onSelect, onClose }: {
         <div className="fixed theme-panel shadow-2xl rounded-lg p-2 w-64 border theme-border z-[9999] flex flex-col max-h-80" style={style}>
             <div className="text-[10px] font-bold opacity-50 uppercase px-2 py-1 rounded sticky top-0 flex justify-between items-center z-10 mb-1" style={{ backgroundColor: 'rgba(127,127,127,0.1)' }}>
                 <span>Seleziona Tipo</span>
-                <button onClick={onClose} className="hover:text-red-500"><X size={12} /></button>
+                <button onClick={onClose} title="Chiudi" aria-label="Chiudi" className="hover:text-red-500"><X size={12} /></button>
             </div>
+            <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Cerca tipo di relazione…"
+                className="w-full mb-1 px-2 py-1.5 text-xs rounded border bg-transparent theme-border theme-text focus:outline-none focus:ring-1 focus:ring-[var(--theme-accent)]" />
             <div className="overflow-y-auto flex-1 custom-scrollbar">
-                {options.map(opt => opt && (
-                    <button key={opt.type} onClick={() => onSelect(opt.type)} className={`w-full flex items-center gap-2 p-2 text-xs theme-hover text-left border-b theme-border last:border-0`}>
-                        <div className="shrink-0"><LinePreview type={opt.type} /></div>
-                        <span className="truncate">{opt.label}</span>
-                    </button>
+                {groups.map(g => (
+                    <div key={g.cat}>
+                        <div className="text-[9px] font-bold uppercase opacity-45 px-2 pt-2 pb-1 sticky top-0 theme-panel">{g.cat}</div>
+                        {g.items.map(opt => (
+                            <button key={opt.type} onClick={() => onSelect(opt.type)} className="w-full flex items-center gap-2 p-2 text-xs theme-hover text-left border-b theme-border last:border-0">
+                                <div className="shrink-0"><LinePreview type={opt.type} /></div>
+                                <span className="truncate">{opt.label}</span>
+                            </button>
+                        ))}
+                    </div>
                 ))}
+                {customs.length > 0 && (
+                    <div>
+                        <div className="text-[9px] font-bold uppercase opacity-45 px-2 pt-2 pb-1 sticky top-0 theme-panel">Personalizzate</div>
+                        {customs.map(opt => (
+                            <button key={opt.type} onClick={() => onSelect(opt.type)} className="w-full flex items-center gap-2 p-2 text-xs theme-hover text-left border-b theme-border last:border-0">
+                                <div className="shrink-0"><LinePreview type={opt.type} /></div>
+                                <span className="truncate">{opt.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {total === 0 && <div className="text-xs opacity-50 text-center py-4">Nessun tipo corrisponde a "{query}"</div>}
             </div>
         </div>
     );
@@ -145,7 +170,7 @@ export const NotesPanel = ({ notes, onChange }: { notes: NoteItem[], onChange: (
                                 <div className="font-bold opacity-50 text-[10px] theme-text">{n.date || 'Senza data'}</div>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button onClick={() => startEdit(n)} className="theme-text hover:bg-black/10 dark:hover:bg-white/10 rounded p-0.5"><Edit3 size={10} /></button>
-                                    <button onClick={() => onChange(notes.filter(x => x.id !== n.id))} className="text-red-500 hover:bg-red-100 rounded p-0.5"><X size={10} /></button>
+                                    <button onClick={() => onChange(notes.filter(x => x.id !== n.id))} title="Elimina nota" aria-label="Elimina nota" className="text-red-500 hover:bg-red-100 rounded p-0.5"><X size={10} /></button>
                                 </div>
                             </div>
                             <div className="whitespace-pre-wrap theme-text">{n.text}</div>
@@ -170,7 +195,7 @@ export const NotesPanel = ({ notes, onChange }: { notes: NoteItem[], onChange: (
                         placeholder={editingId ? "Modifica nota..." : "Nuova nota..."}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSave(); } }}
                     />
-                    <button onClick={handleSave} className="bg-blue-600 text-white p-1 rounded self-end hover:bg-blue-700">
+                    <button onClick={handleSave} title={editingId ? "Salva nota" : "Aggiungi nota"} aria-label={editingId ? "Salva nota" : "Aggiungi nota"} className="bg-blue-600 text-white p-1 rounded self-end hover:bg-blue-700">
                         {editingId ? <Check size={14} /> : <Plus size={14} />}
                     </button>
                     {editingId && <button onClick={() => { setEditingId(null); setText(""); setDate(""); }} className="bg-gray-200 text-gray-600 p-1 rounded self-end hover:bg-gray-300"><X size={14} /></button>}

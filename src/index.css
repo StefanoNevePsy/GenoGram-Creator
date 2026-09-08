@@ -25,3 +25,12 @@ body {
     background: white;
   }
 }
+/* --- FOCUS VISIBILE ---
+   Il progetto non aveva alcuna regola :focus-visible e diversi campi usano
+   `outline-none` senza sostituto: digitando non si capiva dove fosse il fuoco.
+   Anello basato sull'accento del tema, quindi visibile anche sui temi scuri. */
+:where(button, [role="button"], a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--theme-accent, #2563eb);
+    outline-offset: 2px;
+    border-radius: 4px;
+}

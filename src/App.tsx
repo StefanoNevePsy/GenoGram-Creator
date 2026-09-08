@@ -56,6 +56,10 @@ export default function GenogramApp() {
     const [structuralMaps, setStructuralMaps] = useState<StructuralMap[]>([]);
     const [showMinuchin, setShowMinuchin] = useState(false);
     const [overlayMapId, setOverlayMapId] = useState<string | null>(null);
+    // Barra strumenti: sfumatura a destra solo quando il contenuto trabocca davvero
+    const toolbarRef = useRef<HTMLDivElement>(null);
+    const [toolbarOverflow, setToolbarOverflow] = useState(false);
+    const [saveHint, setSaveHint] = useState(false);
     const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
     const [showReportConfig, setShowReportConfig] = useState(false);
 
@@ -457,6 +461,31 @@ export default function GenogramApp() {
     // 2. AUTOSAVE INTELLIGENTE (localStorage + Firebase) — vedi hooks/useAutosave
     useAutosave({ view, currentGenId, metaTitle, metaCategory, nodes, edges, groups, stickyNotes, structuralMaps, customPresets, historyIndex, isRemoteUpdate, user, db, appId, customUser, setSyncStatus });
 
+    useEffect(() => {
+        const el = toolbarRef.current;
+        if (!el) { setToolbarOverflow(false); return; }
+        const check = () => setToolbarOverflow(el.scrollWidth > el.clientWidth + 4);
+        check();
+        window.addEventListener('resize', check);
+        return () => window.removeEventListener('resize', check);
+    }, [view]);
+
+    // Escape chiude le modali aperte: nessuna lo supportava (si poteva uscire
+    // solo cliccando la X o l'overlay), bloccante per chi usa solo la tastiera.
+    useEffect(() => {
+        const onEsc = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            if (showMinuchin) return setShowMinuchin(false);      // gestisce da sé i sotto-livelli
+            if (showReportConfig) return setShowReportConfig(false);
+            if (showReport) return setShowReport(false);
+            if (showDesigner) return setShowDesigner(false);
+            if (showSettings) return setShowSettings(false);
+            if (showHelp) return setShowHelp(false);
+        };
+        window.addEventListener('keydown', onEsc);
+        return () => window.removeEventListener('keydown', onEsc);
+    }, [showMinuchin, showReportConfig, showReport, showDesigner, showSettings, showHelp]);
+
     // Shortcut "i" per legenda
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -700,7 +729,12 @@ export default function GenogramApp() {
     }, [user, db, customUser]);
 
     useLayoutEffect(() => { if (view === 'editor' && containerRef.current) setTimeout(() => { if (containerRef.current) containerRef.current.scrollTo(CENTER_POS - containerRef.current.clientWidth / 2, CENTER_POS - containerRef.current.clientHeight / 2); }, 100); }, [view]);
-    const handleSave = () => { alert("I tuoi salvataggi sono gestiti in modo completamente automatico e avvengono ogni volta che compi un'azione!"); };
+    const handleSave = () => {
+        // Niente alert() su dati clinici: il salvataggio e' gia' automatico, lo
+        // confermiamo con un messaggio effimero accanto all'indicatore di sync.
+        setSaveHint(true);
+        setTimeout(() => setSaveHint(false), 2200);
+    };
     // --- 1. GESTIONE STATO CORRETTA (FIX PER DATI FANTASMA) ---
 
     // Funzione helper per resettare pulito lo stato e la storia
@@ -1620,10 +1654,13 @@ export default function GenogramApp() {
                                 const isActive = filterCategory === cat.id;
                                 return (
                                     <button key={cat.id} onClick={() => setFilterCategory(cat.id)} className={`w-full flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${isActive ? 'theme-border border bg-black/5 dark:bg-white/5 font-bold' : 'theme-hover'}`}>
-                                        <span className="flex items-center gap-2" style={{ color: isActive ? undefined : cat.color }}>
+                                        {/* Il colore-categoria resta sull'ICONA: sull'etichetta 7 voci su 8
+                                            scendevano sotto il contrasto AA (fino a 2.15:1). La semantica
+                                            cromatica e' conservata, il testo torna leggibile. */}
+                                        <span className="flex items-center gap-2 theme-text">
                                             <Icon size={16} color={cat.color} /> {cat.label}
                                         </span>
-                                        {count > 0 && <span className="opacity-50 px-1.5 py-0.5 rounded text-[10px] border theme-border">{count}</span>}
+                                        {count > 0 && <span className="opacity-70 px-1.5 py-0.5 rounded text-[10px] border theme-border">{count}</span>}
                                     </button>
                                 );
                             })}
@@ -1690,11 +1727,11 @@ export default function GenogramApp() {
                                                         <Icon size={12} /> {catDef.label}
                                                     </div>
                                                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button title="Esporta file" onClick={(e) => { e.stopPropagation(); exportSingleGenogram(g); }} className="text-gray-400 hover:text-blue-500"><Download size={16} /></button>
-                                                        <button title="Duplica" onClick={(e) => { e.stopPropagation(); duplicateGenogram(g); }} className="text-gray-400 hover:text-green-600"><Copy size={16} /></button>
-                                                        <button title="Elimina" onClick={(e) => {
+                                                        <button aria-label="Esporta file" title="Esporta file" onClick={(e) => { e.stopPropagation(); exportSingleGenogram(g); }} className="text-gray-400 hover:text-blue-500"><Download size={16} /></button>
+                                                        <button aria-label="Duplica" title="Duplica" onClick={(e) => { e.stopPropagation(); duplicateGenogram(g); }} className="text-gray-400 hover:text-green-600"><Copy size={16} /></button>
+                                                        <button aria-label="Elimina" title="Elimina" onClick={(e) => {
                                                             e.stopPropagation();
-                                                            if (confirm("Eliminare?")) {
+                                                            if (confirm("Eliminare definitivamente \"" + g.title + "\" (" + (g.data?.nodes?.length || 0) + " persone)? L'operazione non e' annullabile.")) {
                                                                 if (db) deleteDoc(doc(db, 'artifacts', appId, 'users', customUser || user?.uid || 'anon', 'genograms', g.id));
                                                                 removeLocalGenogram(g.id);
                                                                 setGenograms(prev => prev.filter(x => x.id !== g.id));
@@ -1779,7 +1816,7 @@ export default function GenogramApp() {
 
                 {/* SINISTRA: Titolo e Categorie (Fissi) */}
                 <div className="flex gap-2 md:gap-3 items-center shrink-0">
-                    <button onClick={() => setView('dashboard')} className="p-2 theme-hover rounded"><LayoutGrid size={20} /></button>
+                    <button onClick={() => setView('dashboard')} title="Torna ai genogrammi" aria-label="Torna ai genogrammi" className="p-2 theme-hover rounded"><LayoutGrid size={20} /></button>
                     <div className="flex flex-col ml-1">
                         <input value={metaTitle} onChange={e => setMetaTitle(e.target.value)} className="bg-transparent font-bold text-sm w-24 md:w-40 outline-none theme-text truncate" placeholder="Titolo" />
                         <div className="relative">
@@ -1802,17 +1839,101 @@ export default function GenogramApp() {
 
                 {/* CENTRO: Toolbar (Scrollabile e Comprimibile) */}
                 {/* 'flex-1 min-w-0' forza questo div a restringersi invece di spingere fuori gli altri */}
-                <div className="flex-1 min-w-0 flex justify-start md:justify-center px-2">
-                    <div className="flex items-center gap-1 overflow-x-auto no-scrollbar w-full md:w-auto md:max-w-full">
+
+                {/* DESTRA: Sync, Undo, Theme, Export (Fissi) */}
+                <div className="flex gap-2 items-center shrink-0">
+                    {/* Sync Status - Nascosto su mobile stretto */}
+                    <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm mr-2 theme-border theme-panel" title="Stato Sync">
+                        {syncStatus === 'synced' && <Cloud className="text-green-500" size={16} />}
+                        {syncStatus === 'syncing' && <RefreshCw className="text-orange-500 animate-spin" size={16} />}
+                        {syncStatus === 'error' && <CloudOff className="text-red-500" size={16} />}
+                        {syncStatus === 'offline' && <CloudOff className="opacity-50" size={16} />}
+                        <span className={`text-[10px] font-bold uppercase ${syncStatus === 'synced' ? 'text-green-600' : 'opacity-50'}`}>
+                            {saveHint ? 'SALVATO' : syncStatus === 'synced' ? 'SYNC' : syncStatus === 'syncing' ? 'SAVING' : 'OFFLINE'}
+                        </span>
+                    </div>
+
+                    <button onClick={handleUndo} disabled={historyIndex <= 0} className={`p-1.5 rounded ${historyIndex <= 0 ? 'opacity-30' : 'theme-hover'}`} aria-label="Annulla" title="Annulla"><RotateCcw size={18} /></button>
+                    <button onClick={handleRedo} disabled={historyIndex >= history.length - 1} className={`p-1.5 rounded ${historyIndex >= history.length - 1 ? 'opacity-30' : 'theme-hover'}`} title="Ripristina"><RotateCw size={18} /></button>
+
+                    <div className="h-6 w-px bg-gray-300 opacity-30 mx-1 hidden md:block" />
+
+                    <button onClick={centerView} className="p-1.5 theme-hover rounded hidden md:block" aria-label="Ricentra" title="Ricentra"><Target size={18} /></button>
+                    <button onClick={fitView} className="p-1.5 theme-hover rounded" aria-label="Adatta contenuto (Ctrl+0)" title="Adatta contenuto (Ctrl+0)"><Scan size={18} /></button>
+                    <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} title="Riduci zoom" aria-label="Riduci zoom" className="p-1.5 theme-hover rounded hidden sm:block"><ZoomOut size={18} /></button>
+                    <span className="text-xs w-8 text-center hidden md:block">{Math.round(zoom * 100)}%</span>
+                    <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} title="Aumenta zoom" aria-label="Aumenta zoom" className="p-1.5 theme-hover rounded hidden sm:block"><ZoomIn size={18} /></button>
+
+                    <div className="h-6 w-px bg-gray-300 opacity-30 mx-1" />
+
+                    {/* TASTO TEMA DROPDOWN (Compatto per Header) */}
+                    <div className="w-10 md:w-32">
+                        {/* Su mobile mostra solo icona o versione ridotta, su desktop menu completo */}
+                        <div className="hidden md:block">
+                            <ThemeSelector currentThemeId={themeId} onChange={setThemeId} placement="bottom" />
+                        </div>
+                        <div className="md:hidden">
+                            <button
+                                onClick={() => {
+                                    const idx = PRESET_THEMES.findIndex(t => t.id === themeId);
+                                    const next = PRESET_THEMES[(idx + 1) % PRESET_THEMES.length];
+                                    setThemeId(next.id);
+                                }}
+                                className="p-1.5 theme-hover rounded"
+                                title={currentTheme.type === 'dark' ? 'Passa al tema chiaro' : 'Passa al tema scuro'}
+                                aria-label={currentTheme.type === 'dark' ? 'Passa al tema chiaro' : 'Passa al tema scuro'}
+                            >
+                                {currentTheme.type === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
+                            </button>
+                        </div>
+                    </div>
+
+                    <button onClick={() => setShowReport(true)} className="p-1.5 theme-hover rounded hidden sm:block" style={{ color: 'var(--theme-accent)' }} title="Report"><FileText size={20} /></button>
+
+                    <div className="relative group z-50">
+                        <button className="p-1.5 theme-hover rounded font-bold" style={{ color: 'var(--theme-accent)' }} aria-label="Esporta" title="Esporta"><Download size={20} /></button>
+                        <div className="absolute right-0 top-full theme-panel border theme-border shadow-lg rounded p-3 hidden group-hover:block w-64 z-[70]">
+                            <div className="mb-3 pb-3 border-b theme-border">
+                                <div className="text-[10px] uppercase font-bold opacity-50 mb-2">Qualità Immagine</div>
+                                <div className="flex bg-black/5 dark:bg-white/5 rounded p-1 gap-1 items-center">
+                                    {[1, 2, 4, 6].map(s => (<button key={s} onClick={(e) => { e.stopPropagation(); setExportScale(s); }} className={`flex-1 text-[10px] py-1.5 rounded transition-all font-medium ${exportScale === s ? 'theme-panel shadow text-[var(--theme-accent)]' : 'opacity-50'}`}>{s}x</button>))}
+                                    <div className="w-px h-4 bg-gray-300 opacity-30 mx-0.5"></div>
+                                    <div className="relative group/input"><input type="number" min="1" max="12" value={exportScale} onClick={(e) => e.stopPropagation()} onChange={(e) => { const val = parseInt(e.target.value); if (!isNaN(val)) setExportScale(Math.max(1, Math.min(12, val))); }} className="w-10 text-[10px] py-1 rounded border-none bg-transparent text-center outline-none font-bold text-[var(--theme-accent)]" placeholder="#" /></div>
+                                </div>
+                            </div>
+
+                            <div className="text-[10px] uppercase font-bold opacity-50 mb-1 px-2">Immagini</div>
+                            <button onClick={() => downloadImage('png')} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><ImageIcon size={14} /> Scarica PNG</button>
+                            <button onClick={() => downloadImage('jpeg')} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><FileImage size={14} /> Scarica JPEG</button>
+                            <button onClick={downloadSVG} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><GitBranch size={14} /> Scarica SVG (Vettoriale)</button>
+
+                            <div className="h-px bg-gray-200 dark:bg-gray-600 my-2 opacity-30" />
+
+                            <div className="text-[10px] uppercase font-bold opacity-50 mb-1 px-2">Documenti</div>
+                            <button onClick={printVectorPDF} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><FileText size={14} /> PDF Vettoriale (Solo Grafico)</button>
+                            <button onClick={() => setShowReportConfig(true)} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><FileText size={14} /> Report Clinico (Completo)</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* --- BARRA STRUMENTI (riga propria a piena larghezza) ---
+                Prima viveva dentro l'header tra due blocchi `shrink-0`: sotto i
+                1024px il contenitore `flex-1 min-w-0` veniva schiacciato a 0px e
+                TUTTI gli strumenti diventavano inaccessibili (nessuna persona
+                creabile su mobile). Su una riga propria ha sempre la larghezza
+                piena; la sfumatura a destra compare solo se il contenuto trabocca. */}
+            <div className="shrink-0 border-b theme-border theme-panel relative">
+                <div ref={toolbarRef} className="flex items-center gap-1 overflow-x-auto no-scrollbar px-2 py-1.5">
                         <button onClick={() => addNodeAtCenter('M')} title="Nuovo Maschio (M)" className="p-1.5 theme-hover rounded shrink-0"><Square style={{ color: 'var(--theme-accent)' }} size={20} /></button>
                         <button onClick={() => addNodeAtCenter('F')} title="Nuova Femmina (F)" className="p-1.5 theme-hover rounded shrink-0"><Circle className="text-pink-600" size={20} /></button>
 
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
 
-                        <button onClick={addParentsToSelection} className="p-1.5 theme-hover rounded shrink-0" title="Aggiungi Genitori"><UserPlus size={18} /></button>
-                        <button onClick={addSpouseToSelection} className="p-1.5 theme-hover rounded shrink-0" title="Aggiungi Partner"><Heart size={18} /></button>
-                        <button onClick={addChildToSelection} className="p-1.5 theme-hover rounded shrink-0" title="Aggiungi Figlio"><GitBranch size={18} /></button>
-                        <button onClick={createGroup} title="Gruppo" className="p-1.5 theme-hover rounded shrink-0"><Users size={20} /></button>
+                        <button onClick={addParentsToSelection} className="p-1.5 theme-hover rounded shrink-0" aria-label="Aggiungi Genitori" title="Aggiungi Genitori"><UserPlus size={18} /></button>
+                        <button onClick={addSpouseToSelection} className="p-1.5 theme-hover rounded shrink-0" aria-label="Aggiungi Partner" title="Aggiungi Partner"><Heart size={18} /></button>
+                        <button onClick={addChildToSelection} className="p-1.5 theme-hover rounded shrink-0" aria-label="Aggiungi Figlio" title="Aggiungi Figlio"><GitBranch size={18} /></button>
+                        <button onClick={createGroup} aria-label="Gruppo" title="Gruppo" className="p-1.5 theme-hover rounded shrink-0"><Users size={20} /></button>
 
                         {/* --- CORREZIONE QUI (Rimosso il doppio <<) --- */}
                         <button onClick={() => addStickyNoteAtCursor()} title="Aggiungi Nota (N)" className="p-1.5 theme-hover rounded shrink-0" style={{ color: '#f59e0b' }}>
@@ -1820,8 +1941,8 @@ export default function GenogramApp() {
                         </button>
 
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
-                        <button onClick={autoLayout} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} title="Auto-Layout"><Network size={18} /></button>
-                        <button onClick={autoLayoutCM} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} title="Layout Genogramma (Carter & McGoldrick)"><GitBranch size={18} /></button>
+                        <button onClick={autoLayout} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Auto-Layout" title="Auto-Layout"><Network size={18} /></button>
+                        <button onClick={autoLayoutCM} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Layout Genogramma (Carter & McGoldrick)" title="Layout Genogramma (Carter & McGoldrick)"><GitBranch size={18} /></button>
                         <button onClick={() => setShowMinuchin(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} title="Mappe Strutturali (Minuchin)"><LayoutGrid size={18} /></button>
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
 
@@ -1853,82 +1974,10 @@ export default function GenogramApp() {
                             </select>
                         </div>
                         <button onClick={() => setShowLegend(!showLegend)} className={`p-1.5 rounded shrink-0 ${showLegend ? 'bg-black/10 dark:bg-white/10' : 'theme-hover'}`} title="Mostra Legenda"><Info size={18} /></button>
-                    </div>
                 </div>
-
-                {/* DESTRA: Sync, Undo, Theme, Export (Fissi) */}
-                <div className="flex gap-2 items-center shrink-0">
-                    {/* Sync Status - Nascosto su mobile stretto */}
-                    <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm mr-2 theme-border theme-panel" title="Stato Sync">
-                        {syncStatus === 'synced' && <Cloud className="text-green-500" size={16} />}
-                        {syncStatus === 'syncing' && <RefreshCw className="text-orange-500 animate-spin" size={16} />}
-                        {syncStatus === 'error' && <CloudOff className="text-red-500" size={16} />}
-                        {syncStatus === 'offline' && <CloudOff className="opacity-50" size={16} />}
-                        <span className={`text-[10px] font-bold uppercase ${syncStatus === 'synced' ? 'text-green-600' : 'opacity-50'}`}>
-                            {syncStatus === 'synced' ? 'SYNC' : syncStatus === 'syncing' ? 'SAVING' : 'OFFLINE'}
-                        </span>
-                    </div>
-
-                    <button onClick={handleUndo} disabled={historyIndex <= 0} className={`p-1.5 rounded ${historyIndex <= 0 ? 'opacity-30' : 'theme-hover'}`} title="Annulla"><RotateCcw size={18} /></button>
-                    <button onClick={handleRedo} disabled={historyIndex >= history.length - 1} className={`p-1.5 rounded ${historyIndex >= history.length - 1 ? 'opacity-30' : 'theme-hover'}`} title="Ripristina"><RotateCw size={18} /></button>
-
-                    <div className="h-6 w-px bg-gray-300 opacity-30 mx-1 hidden md:block" />
-
-                    <button onClick={centerView} className="p-1.5 theme-hover rounded hidden md:block" title="Ricentra"><Target size={18} /></button>
-                    <button onClick={fitView} className="p-1.5 theme-hover rounded" title="Adatta contenuto (Ctrl+0)"><Scan size={18} /></button>
-                    <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="p-1.5 theme-hover rounded hidden sm:block"><ZoomOut size={18} /></button>
-                    <span className="text-xs w-8 text-center hidden md:block">{Math.round(zoom * 100)}%</span>
-                    <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-1.5 theme-hover rounded hidden sm:block"><ZoomIn size={18} /></button>
-
-                    <div className="h-6 w-px bg-gray-300 opacity-30 mx-1" />
-
-                    {/* TASTO TEMA DROPDOWN (Compatto per Header) */}
-                    <div className="w-10 md:w-32">
-                        {/* Su mobile mostra solo icona o versione ridotta, su desktop menu completo */}
-                        <div className="hidden md:block">
-                            <ThemeSelector currentThemeId={themeId} onChange={setThemeId} placement="bottom" />
-                        </div>
-                        <div className="md:hidden">
-                            <button
-                                onClick={() => {
-                                    const idx = PRESET_THEMES.findIndex(t => t.id === themeId);
-                                    const next = PRESET_THEMES[(idx + 1) % PRESET_THEMES.length];
-                                    setThemeId(next.id);
-                                }}
-                                className="p-1.5 theme-hover rounded"
-                            >
-                                {currentTheme.type === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
-                            </button>
-                        </div>
-                    </div>
-
-                    <button onClick={() => setShowReport(true)} className="p-1.5 theme-hover rounded hidden sm:block" style={{ color: 'var(--theme-accent)' }} title="Report"><FileText size={20} /></button>
-
-                    <div className="relative group z-50">
-                        <button className="p-1.5 theme-hover rounded font-bold" style={{ color: 'var(--theme-accent)' }} title="Esporta"><Download size={20} /></button>
-                        <div className="absolute right-0 top-full theme-panel border theme-border shadow-lg rounded p-3 hidden group-hover:block w-64 z-[70]">
-                            <div className="mb-3 pb-3 border-b theme-border">
-                                <div className="text-[10px] uppercase font-bold opacity-50 mb-2">Qualità Immagine</div>
-                                <div className="flex bg-black/5 dark:bg-white/5 rounded p-1 gap-1 items-center">
-                                    {[1, 2, 4, 6].map(s => (<button key={s} onClick={(e) => { e.stopPropagation(); setExportScale(s); }} className={`flex-1 text-[10px] py-1.5 rounded transition-all font-medium ${exportScale === s ? 'theme-panel shadow text-[var(--theme-accent)]' : 'opacity-50'}`}>{s}x</button>))}
-                                    <div className="w-px h-4 bg-gray-300 opacity-30 mx-0.5"></div>
-                                    <div className="relative group/input"><input type="number" min="1" max="12" value={exportScale} onClick={(e) => e.stopPropagation()} onChange={(e) => { const val = parseInt(e.target.value); if (!isNaN(val)) setExportScale(Math.max(1, Math.min(12, val))); }} className="w-10 text-[10px] py-1 rounded border-none bg-transparent text-center outline-none font-bold text-[var(--theme-accent)]" placeholder="#" /></div>
-                                </div>
-                            </div>
-
-                            <div className="text-[10px] uppercase font-bold opacity-50 mb-1 px-2">Immagini</div>
-                            <button onClick={() => downloadImage('png')} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><ImageIcon size={14} /> Scarica PNG</button>
-                            <button onClick={() => downloadImage('jpeg')} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><FileImage size={14} /> Scarica JPEG</button>
-                            <button onClick={downloadSVG} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><GitBranch size={14} /> Scarica SVG (Vettoriale)</button>
-
-                            <div className="h-px bg-gray-200 dark:bg-gray-600 my-2 opacity-30" />
-
-                            <div className="text-[10px] uppercase font-bold opacity-50 mb-1 px-2">Documenti</div>
-                            <button onClick={printVectorPDF} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><FileText size={14} /> PDF Vettoriale (Solo Grafico)</button>
-                            <button onClick={() => setShowReportConfig(true)} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><FileText size={14} /> Report Clinico (Completo)</button>
-                        </div>
-                    </div>
-                </div>
+                {toolbarOverflow && (
+                    <div className="pointer-events-none absolute inset-y-0 right-0 w-10" style={{ background: `linear-gradient(to right, transparent, ${currentTheme.colors.bgPanel})` }} />
+                )}
             </div>
 
             {/* --- MAIN AREA --- */}
@@ -1947,6 +1996,8 @@ export default function GenogramApp() {
                         <svg
                             ref={svgRef}
                             width={CANVAS_SIZE} height={CANVAS_SIZE}
+                            role="application"
+                            aria-label={`Canvas del genogramma: ${nodes.length} persone, ${edges.length} relazioni`}
                             className={`block touch-none ${isPanMode ? (dragState?.active ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
                             style={{ touchAction: 'none' }}
 
@@ -2270,6 +2321,8 @@ export default function GenogramApp() {
                                     setSelectedNoteIds([]); // <--- Reset Note
                                 }}
                                 className="p-1 hover:bg-red-100 hover:text-red-600 rounded transition-colors"
+                                title="Chiudi pannello proprietà"
+                                aria-label="Chiudi pannello proprietà"
                             >
                                 <X size={18} />
                             </button>
@@ -2339,7 +2392,15 @@ export default function GenogramApp() {
 
                                     <NotesPanel notes={selectedNode.notes} onChange={newNotes => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, notes: newNotes } : n))} />
 
-                                    <button onClick={() => { updateAll(nodes.filter(n => !selectedNodeIds.includes(n.id)), edges.filter(e => !selectedNodeIds.includes(e.fromId) && !selectedNodeIds.includes(e.toId)), groups); setSelectedNodeIds([]); }} className="w-full bg-red-100 text-red-600 py-2 rounded text-xs hover:bg-red-200 mt-4 flex items-center justify-center gap-2"><Trash2 size={14} /> Elimina Persona</button>
+                                    <button onClick={() => {
+                                        // Conferma che NOMINA la persona e il danno collaterale: prima
+                                        // cancellava persona + relazioni senza chiedere nulla, mentre il
+                                        // tasto Canc sulla stessa persona chiedeva conferma.
+                                        const rel = edges.filter(e => selectedNodeIds.includes(e.fromId) || selectedNodeIds.includes(e.toId)).length;
+                                        const nomi = nodes.filter(n => selectedNodeIds.includes(n.id)).map(n => n.name).join(', ');
+                                        if (!confirm(`Eliminare ${nomi}${rel ? ` e le sue ${rel} relazioni` : ''}? Puoi annullare con Ctrl+Z.`)) return;
+                                        updateAll(nodes.filter(n => !selectedNodeIds.includes(n.id)), edges.filter(e => !selectedNodeIds.includes(e.fromId) && !selectedNodeIds.includes(e.toId)), groups); setSelectedNodeIds([]);
+                                    }} className="w-full bg-red-100 text-red-600 py-2 rounded text-xs hover:bg-red-200 mt-4 flex items-center justify-center gap-2"><Trash2 size={14} /> Elimina Persona</button>
                                 </div>
                             )}
 
