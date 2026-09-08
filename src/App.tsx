@@ -38,6 +38,7 @@ import { usePinchZoom } from './hooks/useZoomPan';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useCanvasInteraction } from './hooks/useCanvasInteraction';
 import { MinuchinManager, MinuchinOverlay, mapToSvgString } from './components/minuchin';
+import { PeopleListPanel, describePerson } from './components/peopleList';
 import { readLocalIndex, readFullGenogram, removeLocalGenogram, persistImportedLocally, downloadJsonFile } from './services/storage';
 
 
@@ -61,6 +62,10 @@ export default function GenogramApp() {
     const [toolbarOverflow, setToolbarOverflow] = useState(false);
     const [saveHint, setSaveHint] = useState(false);
     const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+    const [showPeopleList, setShowPeopleList] = useState(false);
+    // Annunci per screen reader: creazione/selezione/eliminazione sul canvas
+    // altrimenti non producono alcun output percepibile.
+    const [liveMessage, setLiveMessage] = useState('');
     const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
     const [showReportConfig, setShowReportConfig] = useState(false);
 
@@ -769,7 +774,8 @@ export default function GenogramApp() {
         return id;
     };
 
-    const addNodeAtCenter = (gender: Gender) => { const n = { id: generateId(), x: CENTER_POS, y: CENTER_POS, gender, name: 'Nuovo', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] }; updateNodes(prev => [...prev, n]); setSelectedNodeIds([n.id]); };
+    const addNodeAtCenter = (gender: Gender) => {
+        setLiveMessage(`Aggiunta persona ${gender === 'M' ? 'maschio' : gender === 'F' ? 'femmina' : ''} al centro del canvas`); const n = { id: generateId(), x: CENTER_POS, y: CENTER_POS, gender, name: 'Nuovo', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] }; updateNodes(prev => [...prev, n]); setSelectedNodeIds([n.id]); };
 
     const addNodeAtPos = (gender: Gender, x: number, y: number) => {
         // Snap to grid se attivo
@@ -787,6 +793,22 @@ export default function GenogramApp() {
     // --- HELPERS AGGIUNTA RAPIDA ---
     // Helper per arrotondare alla griglia quando snap è attivo
     const snap = (v: number) => snapToGrid ? Math.round(v / SNAP_SIZE) * SNAP_SIZE : v;
+
+    // Selezione dall'elenco: seleziona, annuncia e centra la persona nel canvas
+    const selectPersonFromList = (id: string, opts?: { additive?: boolean }) => {
+        const n = nodesRef.current.find(x => x.id === id);
+        setSelectedNodeIds(prev => opts?.additive ? (prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]) : [id]);
+        setSelectedEdgeIds([]); setSelectedGroupIds([]); setSelectedNoteIds([]);
+        if (n) {
+            setLiveMessage(`Selezionata ${describePerson(n, edgesRef.current)}`);
+            const c = containerRef.current;
+            if (c) {
+                const cx = CENTER_POS + (n.x + NODE_WIDTH / 2 - CENTER_POS) * zoom;
+                const cy = CENTER_POS + (n.y + NODE_HEIGHT / 2 - CENTER_POS) * zoom;
+                c.scrollTo({ left: cx - c.clientWidth / 2, top: cy - c.clientHeight / 2, behavior: 'smooth' });
+            }
+        }
+    };
 
     // Duplica i nodi selezionati (Ctrl+D), incluse le relazioni interne alla selezione
     const duplicateSelectedNodes = () => {
@@ -1767,10 +1789,37 @@ export default function GenogramApp() {
 
                                 {/* Empty State */}
                                 {filteredGenograms.length === 0 && (
-                                    <div className="col-span-full flex flex-col items-center justify-center h-64 opacity-40 border-2 border-dashed theme-border rounded-xl">
-                                        <Search size={48} className="mb-4" />
-                                        <p>Nessun genogramma trovato</p>
-                                        {searchTerm && <button onClick={() => setSearchTerm('')} className="hover:underline mt-2 text-sm" style={{ color: 'var(--theme-accent)' }}>Pulisci ricerca</button>}
+                                    /* Due stati diversi: la ricerca senza risultati non e' il primo
+                                       avvio. Prima entrambi mostravano una lente e "Nessun genogramma
+                                       trovato", senza alcuna indicazione su cosa fare. */
+                                    <div className="col-span-full flex flex-col items-center justify-center py-16 px-6 text-center">
+                                        {searchTerm || filterCategory !== 'ALL' ? (
+                                            <>
+                                                <Search size={40} className="mb-3 opacity-30" />
+                                                <p className="font-medium theme-text">Nessun genogramma corrisponde ai filtri</p>
+                                                <p className="text-sm mt-1 mb-4" style={{ color: currentTheme.colors.textMuted }}>
+                                                    {searchTerm ? `Nessun risultato per "${searchTerm}".` : 'Questa categoria e\' ancora vuota.'}
+                                                </p>
+                                                <button onClick={() => { setSearchTerm(''); setFilterCategory('ALL'); }}
+                                                    className="text-sm px-3 py-1.5 rounded-lg border theme-border theme-hover theme-text">Azzera i filtri</button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ backgroundColor: currentTheme.colors.accent + '1A' }}>
+                                                    <Activity size={32} style={{ color: currentTheme.colors.accent }} />
+                                                </div>
+                                                <h3 className="font-bold text-lg theme-text">Crea il tuo primo genogramma</h3>
+                                                <p className="text-sm mt-1 mb-5 max-w-md" style={{ color: currentTheme.colors.textMuted }}>
+                                                    Parti da una tela vuota: aggiungi le persone con i tasti <b>M</b> e <b>F</b>,
+                                                    trascina le maniglie per collegarle e usa il layout automatico per disporre le generazioni.
+                                                </p>
+                                                <button onClick={handleNewGenogram}
+                                                    className="text-white px-4 py-2.5 rounded-lg font-medium shadow-sm hover:opacity-90 flex items-center gap-2"
+                                                    style={{ backgroundColor: currentTheme.colors.accent }}>
+                                                    <Plus size={18} /> Nuovo genogramma
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1940,7 +1989,7 @@ export default function GenogramApp() {
                 creabile su mobile). Su una riga propria ha sempre la larghezza
                 piena; la sfumatura a destra compare solo se il contenuto trabocca. */}
             <div className="shrink-0 border-b theme-border theme-panel relative">
-                <div ref={toolbarRef} className="flex items-center gap-1 overflow-x-auto no-scrollbar px-2 py-1.5">
+                <div ref={toolbarRef} className="toolbar-strip flex items-center gap-1 overflow-x-auto no-scrollbar px-2 py-1.5">
                         <button onClick={() => addNodeAtCenter('M')} title="Nuovo Maschio (M)" className="p-1.5 theme-hover rounded shrink-0"><Square style={{ color: 'var(--theme-accent)' }} size={20} /></button>
                         <button onClick={() => addNodeAtCenter('F')} title="Nuova Femmina (F)" className="p-1.5 theme-hover rounded shrink-0"><Circle className="text-pink-600" size={20} /></button>
 
@@ -1989,6 +2038,7 @@ export default function GenogramApp() {
                                 <option value="none" className="text-black">Nessuno</option>
                             </select>
                         </div>
+                        <button onClick={() => setShowPeopleList(v => !v)} className={`p-1.5 rounded shrink-0 ${showPeopleList ? 'bg-black/10 dark:bg-white/10' : 'theme-hover'}`} aria-pressed={showPeopleList} aria-label="Elenco persone" title="Elenco persone (accessibile da tastiera)"><Users size={18} /></button>
                         <button onClick={() => setShowLegend(!showLegend)} className={`p-1.5 rounded shrink-0 ${showLegend ? 'bg-black/10 dark:bg-white/10' : 'theme-hover'}`} title="Mostra Legenda"><Info size={18} /></button>
                 </div>
                 {toolbarOverflow && (
@@ -1998,6 +2048,16 @@ export default function GenogramApp() {
 
             {/* --- MAIN AREA --- */}
             <div className="flex-1 flex overflow-hidden relative print:overflow-visible">
+                {/* Regione live: unico canale con cui uno screen reader percepisce
+                    cosa succede sul canvas. */}
+                <div aria-live="polite" role="status" className="sr-only">{liveMessage}</div>
+
+                {showPeopleList && (
+                    <PeopleListPanel nodes={nodes} edges={edges} selectedNodeIds={selectedNodeIds}
+                        darkMode={darkMode} theme={currentTheme}
+                        onSelect={selectPersonFromList} onClose={() => setShowPeopleList(false)} />
+                )}
+
                 <div
                     ref={containerRef}
                     className="flex-1 overflow-auto relative"
@@ -2209,6 +2269,22 @@ export default function GenogramApp() {
                                     return mp ? <MinuchinOverlay map={mp} nodes={nodes} /> : null;
                                 })()}
 
+                                {/* Suggerimento sul canvas vuoto: senza, l'editor nuovo non
+                                    dava alcuna indicazione su come iniziare. */}
+                                {nodes.length === 0 && stickyNotes.length === 0 && (
+                                    <g pointerEvents="none" opacity={0.55}>
+                                        <text x={CENTER_POS} y={CENTER_POS - 18} textAnchor="middle" fontSize={17} fontWeight={700} fill={currentTheme.colors.text}>
+                                            Inizia il genogramma
+                                        </text>
+                                        <text x={CENTER_POS} y={CENTER_POS + 8} textAnchor="middle" fontSize={13} fill={currentTheme.colors.textMuted}>
+                                            Premi M o F per aggiungere una persona sotto il cursore
+                                        </text>
+                                        <text x={CENTER_POS} y={CENTER_POS + 28} textAnchor="middle" fontSize={13} fill={currentTheme.colors.textMuted}>
+                                            oppure clicca col tasto destro sulla tela
+                                        </text>
+                                    </g>
+                                )}
+
                                 {/* NODI */}
                                 {nodes.map(n => {
                                     // Feedback visivo durante modifica gruppo
@@ -2324,7 +2400,7 @@ export default function GenogramApp() {
 
                 {/* --- SIDEBAR PROPRIETÀ UNIFICATA --- */}
                 {(selectedNodeIds.length > 0 || selectedEdgeIds.length > 0 || selectedGroupIds.length > 0 || selectedNoteIds.length > 0) && (
-                    <div className="w-80 border-l p-4 overflow-y-auto theme-panel theme-border print:hidden flex flex-col h-full shadow-xl z-50">
+                    <div className="props-panel w-80 border-l p-4 overflow-y-auto theme-panel theme-border print:hidden flex flex-col h-full shadow-xl z-50">
 
                         {/* Header Sidebar con Deselezione Totale */}
                         <h3 className="font-bold mb-4 flex justify-between items-center shrink-0">
@@ -2349,6 +2425,7 @@ export default function GenogramApp() {
                             {/* 1. PROPRIETÀ NODO (PERSONA) */}
                             {selectedNode && (
                                 <div className="space-y-3 animate-in fade-in slide-in-from-right-4 duration-200">
+                                    <div className="text-[9px] font-bold uppercase opacity-45">Anagrafica</div>
                                     <input className="w-full border p-1 rounded bg-transparent theme-border font-bold" value={selectedNode.name} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, name: e.target.value } : n))} placeholder="Nome" />
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.label || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, label: e.target.value } : n))} placeholder="Etichetta (es. Padre)" />
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.profession || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, profession: e.target.value } : n))} placeholder="Professione" />
@@ -2369,6 +2446,7 @@ export default function GenogramApp() {
                                         <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.causeOfDeath || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, causeOfDeath: e.target.value } : n))} placeholder="Causa del decesso" />
                                     )}
 
+                                    <div className="text-[9px] font-bold uppercase opacity-45 pt-2">Visualizzazione</div>
                                     <div className="flex items-center gap-2 mb-1">
                                         <input
                                             type="checkbox"
@@ -2390,6 +2468,7 @@ export default function GenogramApp() {
                                         <option value="Pet" className="text-black">Animale</option><option value="Pregnancy" className="text-black">Gravidanza</option><option value="Miscarriage" className="text-black">Aborto Spontaneo</option><option value="Abortion" className="text-black">Aborto Volontario</option><option value="Stillbirth" className="text-black">Morto alla nascita</option>
                                     </select>
 
+                                    <div className="text-[9px] font-bold uppercase opacity-45 pt-2">Marcatori clinici</div>
                                     <div className="grid grid-cols-2 gap-2">
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.deceased ? 'bg-black text-white dark:bg-white dark:text-black' : 'theme-border hover:bg-black/5'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, deceased: !n.deceased } : n))}>Deceduto</button>
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.indexPerson ? 'bg-blue-600 text-white' : 'theme-border hover:bg-blue-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, indexPerson: !n.indexPerson } : n))}>Pz. Designato</button>
@@ -2406,6 +2485,7 @@ export default function GenogramApp() {
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.disability ? 'bg-teal-600 text-white' : 'theme-border hover:bg-teal-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, disability: !n.disability } : n))}>Disabilità</button>
                                     </div>
 
+                                    <div className="text-[9px] font-bold uppercase opacity-45 pt-2">Diario clinico</div>
                                     <NotesPanel notes={selectedNode.notes} onChange={newNotes => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, notes: newNotes } : n))} />
 
                                     <button onClick={() => {

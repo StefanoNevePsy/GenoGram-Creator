@@ -210,6 +210,27 @@ references) — non usarlo come verifica.
       Ora Baby / GitBranch / Shapes e LayoutGrid / Boxes. Le duplicazioni rimaste
       (Trash2, Edit3) sono stessa-icona-stessa-azione, quindi corrette.
 
+- [x] **Vista a elenco accessibile** (`components/peopleList.tsx`): il canvas SVG
+      era opaco a uno screen reader e non navigabile da tastiera. Il pannello
+      elenca ogni persona con una descrizione parlata completa (genere, età,
+      marcatori clinici, numero di relazioni), `role=listbox`/`option` con
+      `aria-selected`, frecce su/giù per il fuoco, ricerca che filtra anche per
+      attributo ("femmina", "alcol"), e le relazioni della persona selezionata in
+      coda. La selezione centra la persona sul canvas. Aggiunta una regione
+      `aria-live` che annuncia selezione e creazione: prima nulla di ciò che
+      accade sul canvas era percepibile.
+- [x] **Target touch**: le icone erano ~30x30, sotto i 44px raccomandati al dito.
+      Regola sotto `@media (pointer: coarse)` → 44px minimi su telefono/tablet,
+      densità desktop invariata.
+- [x] **Pannello persona a sezioni**: Anagrafica / Visualizzazione / Marcatori
+      clinici / Diario clinico, invece di 20+ controlli equipesati in blocco.
+- [x] **Empty state**: la dashboard vuota mostrava una lente e "Nessun genogramma
+      trovato" (icona della ricerca per uno stato di zero dati, senza CTA). Ora
+      distingue primo avvio (titolo, spiegazione, pulsante) da filtri senza
+      risultati (azzera filtri). Il canvas vuoto mostra come iniziare, e l'hint
+      sparisce alla prima persona.
+      Test: scripts/e2e-a11y-list.cjs (16 check).
+
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.
 - Tipi puri con `import type` (verbatimModuleSyntax attivo).
