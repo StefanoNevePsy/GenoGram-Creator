@@ -32,7 +32,7 @@ const ratio = (a,b) => { const l1=lum(a), l2=lum(b); return (Math.max(l1,l2)+.05
   const bad = contrasts.filter(c => ratio(c.fg, c.bg) < 4.5);
   ok(contrasts.length > 0 && bad.length === 0, `etichette categoria in AA (${contrasts.length} testate, ${bad.length} sotto 4.5:1${bad.length ? ': ' + bad.map(x=>x.t).join(',') : ''})`);
 
-  await page.click('text=Nuovo'); await page.waitForTimeout(600);
+  await page.click('button:has-text("Nuovo"):visible'); await page.waitForTimeout(600);
   const bar = await page.evaluate(() => { const el = document.querySelector('div.overflow-x-auto.no-scrollbar'); const r = el.getBoundingClientRect(); return { w: Math.round(r.width), sw: el.scrollWidth }; });
   ok(bar.w >= 380, `mobile 390: toolbar a piena larghezza (${bar.w}px, contenuto ${bar.sw}px)`);
   await page.click('[title="Nuovo Maschio (M)"]', { timeout: 3000 });
@@ -44,7 +44,7 @@ const ratio = (a,b) => { const l1=lum(a), l2=lum(b); return (Math.max(l1,l2)+.05
   page = await b.newPage({ viewport: { width: 1400, height: 900 } });
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('http://localhost:5199/', { waitUntil: 'networkidle' });
-  await page.click('text=Nuovo'); await page.waitForTimeout(500);
+  await page.click('button:has-text("Nuovo"):visible'); await page.waitForTimeout(500);
   for (const [k, xy] of [['m',[500,400]], ['f',[700,400]], ['m',[900,400]]]) {
     await page.mouse.move(xy[0], xy[1]); await page.keyboard.press(k); await page.waitForTimeout(250);
   }

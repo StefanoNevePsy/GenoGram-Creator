@@ -9,7 +9,7 @@ const { chromium } = require('playwright-core');
     const ok = (c, m) => console.log((c ? 'PASS' : 'FAIL') + ' ' + m);
 
     await page.goto('http://localhost:5199/', { waitUntil: 'networkidle' });
-    await page.click('text=Nuovo');
+    await page.click('button:has-text("Nuovo"):visible');
     await page.waitForTimeout(400);
 
     // Setup: un nodo maschio selezionato (le maniglie appaiono su selezione)

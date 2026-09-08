@@ -7,7 +7,7 @@ const { chromium } = require('playwright-core');
     const errors=[]; page.on('pageerror',e=>errors.push(e.message));
     const ok=(c,m)=>console.log((c?'PASS':'FAIL')+' '+m);
     await page.goto('http://localhost:5177/', { waitUntil: 'networkidle' });
-    await page.click('text=Nuovo'); await page.waitForTimeout(300);
+    await page.click('button:has-text("Nuovo"):visible'); await page.waitForTimeout(300);
     await page.click('[title="Mappe Strutturali (Minuchin)"]');
     await page.click('text=Nuova minimale'); await page.waitForTimeout(300);
     const svg = page.locator('svg[viewBox="0 0 560 400"]');

@@ -195,6 +195,21 @@ references) — non usarlo come verifica.
       raggruppamento del pannello persona, onboarding ed empty state, deduplica
       icone, target touch < 44px, sidebar dashboard non collassabile a 390px.
 
+- [x] **Picker relazioni a griglia + recenti** (`RelationPickerGrid`, condiviso da
+      menu rapido e pannello): griglia 3 colonne invece di lista (con 83 tipi la
+      lista costringeva a scorrere), sezione "Usati di recente" persistita per
+      utente, ricerca con Invio che sceglie il primo risultato, click-fuori per
+      chiudere il dropdown del pannello.
+- [x] **Dashboard usabile a 390px**: la sidebar `w-64` non aveva breakpoint e
+      mangiava 240px su 390, spingendo ordinamento e schermo intero fuori dal
+      viewport, irraggiungibili. Ora è un drawer sotto md (invariata da md in su),
+      header che va a capo, e la CTA "Nuovo" resta nell'header su mobile —
+      regressione che avevo introdotto io spostandola nel drawer, colta dai test.
+- [x] **Icone deduplicate**: `GitBranch` valeva "Aggiungi Figlio", "Layout C&M" e
+      "Scarica SVG"; `LayoutGrid` valeva "torna alla dashboard" e "Minuchin".
+      Ora Baby / GitBranch / Shapes e LayoutGrid / Boxes. Le duplicazioni rimaste
+      (Trash2, Edit3) sono stessa-icona-stessa-azione, quindi corrette.
+
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.
 - Tipi puri con `import type` (verbatimModuleSyntax attivo).

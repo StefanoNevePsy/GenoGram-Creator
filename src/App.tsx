@@ -7,7 +7,7 @@ import {
     AlignJustify, CircleDashed, FileText, Search, RotateCcw, RotateCw,
     Filter, SortAsc, Tag, HelpCircle,
     Target, Grid3X3, TrendingUp, Image as ImageIcon, FileImage, Check, Info,
-    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy // <--- Network aggiunto qui
+    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy, Baby, Shapes, Boxes, Menu // <--- Network aggiunto qui
 } from 'lucide-react';
 import { StatusBar } from '@capacitor/status-bar';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -60,6 +60,7 @@ export default function GenogramApp() {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const [toolbarOverflow, setToolbarOverflow] = useState(false);
     const [saveHint, setSaveHint] = useState(false);
+    const [showMobileSidebar, setShowMobileSidebar] = useState(false);
     const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
     const [showReportConfig, setShowReportConfig] = useState(false);
 
@@ -1636,9 +1637,16 @@ export default function GenogramApp() {
 
                 {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onExport={handleExportBackup} onImport={handleImport} setCustomUser={setCustomUser} customUser={customUser} setFirebaseConfig={setFirebaseConfig} firebaseConfig={firebaseConfig} />}
 
-                <div className="flex h-full">
-                    {/* --- Sidebar Filters --- */}
-                    <div className="w-64 border-r p-4 flex flex-col gap-4 theme-panel theme-border">
+                <div className="flex h-full relative">
+                    {/* Backdrop del drawer (solo mobile) */}
+                    {showMobileSidebar && (
+                        <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={() => setShowMobileSidebar(false)} />
+                    )}
+                    {/* --- Sidebar Filters ---
+                        Era `w-64` fissa senza breakpoint: a 390px mangiava 240px dei 390
+                        e i controlli di ordinamento finivano tagliati fuori dal viewport,
+                        irraggiungibili. Sotto md diventa un drawer richiamabile. */}
+                    <div className={`${showMobileSidebar ? 'flex fixed inset-y-0 left-0 z-40 shadow-2xl' : 'hidden'} md:flex md:static md:z-auto md:shadow-none w-64 shrink-0 border-r p-4 flex-col gap-4 theme-panel theme-border`}>
                         <div className="flex items-center gap-2 font-bold text-xl mb-2" style={{ color: 'var(--theme-accent)' }}><Activity /> GenoPro</div>
                         <button onClick={handleNewGenogram} className="text-white px-4 py-2 rounded flex items-center justify-center gap-2 font-medium transition-colors shadow-sm hover:opacity-90" style={{ backgroundColor: 'var(--theme-accent)' }}><Plus size={18} /> Nuovo</button>
 
@@ -1682,8 +1690,15 @@ export default function GenogramApp() {
                     {/* --- Main Content --- */}
                     <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: currentTheme.colors.bgMain }}>
                         {/* Top Bar Dashboard */}
-                        <div className="h-16 border-b flex items-center justify-between px-8 theme-panel theme-border">
-                            <div className="flex items-center gap-4 flex-1 max-w-2xl">
+                        <div className="min-h-16 border-b flex flex-wrap items-center justify-between gap-2 px-3 md:px-8 py-2 theme-panel theme-border">
+                            <button onClick={() => setShowMobileSidebar(true)} title="Filtri e categorie" aria-label="Filtri e categorie"
+                                className="md:hidden p-2 rounded-lg theme-hover shrink-0"><Menu size={18} className="theme-text" /></button>
+                            {/* L'azione principale resta nell'header su mobile: dentro il drawer
+                                sarebbe stata a due tap e nascosta. */}
+                            <button onClick={handleNewGenogram} title="Nuovo genogramma" aria-label="Nuovo genogramma"
+                                className="md:hidden text-white px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-medium shrink-0 shadow-sm"
+                                style={{ backgroundColor: 'var(--theme-accent)' }}><Plus size={16} /> Nuovo</button>
+                            <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-[200px] max-w-2xl">
                                 <div className="relative flex-1">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 opacity-50" size={18} />
                                     <input
@@ -1693,8 +1708,8 @@ export default function GenogramApp() {
                                         onChange={e => setSearchTerm(e.target.value)}
                                     />
                                 </div>
-                                <div className="flex items-center gap-2 border-l pl-4 theme-border">
-                                    <span className="text-xs uppercase font-bold opacity-50 theme-text">Ordina</span>
+                                <div className="flex items-center gap-1 md:gap-2 border-l pl-2 md:pl-4 theme-border shrink-0">
+                                    <span className="hidden lg:inline text-xs uppercase font-bold opacity-70 theme-text">Ordina</span>
                                     <button onClick={() => setSortBy('date_desc')} className={`p-1.5 rounded ${sortBy === 'date_desc' ? 'bg-black/10 dark:bg-white/10 text-[var(--theme-accent)]' : 'theme-hover'}`} title="Più Recenti"><SortAsc className="rotate-180" size={18} /></button>
                                     <button onClick={() => setSortBy('date_asc')} className={`p-1.5 rounded ${sortBy === 'date_asc' ? 'bg-black/10 dark:bg-white/10 text-[var(--theme-accent)]' : 'theme-hover'}`} title="Più Vecchi"><SortAsc size={18} /></button>
                                     <button onClick={() => setSortBy('name_asc')} className={`p-1.5 rounded ${sortBy === 'name_asc' ? 'bg-black/10 dark:bg-white/10 text-[var(--theme-accent)]' : 'theme-hover'}`} title="Alfabetico"><Filter size={18} /></button>
@@ -1713,6 +1728,7 @@ export default function GenogramApp() {
                                     const Icon = ICON_MAP[catDef.iconKey] || Tag;
                                     return (
                                         <div key={g.id} onClick={() => {
+                                            setShowMobileSidebar(false);
                                             setCurrentGenId(g.id);
                                             setMetaTitle(g.title);
                                             setMetaCategory(g.category);
@@ -1905,7 +1921,7 @@ export default function GenogramApp() {
                             <div className="text-[10px] uppercase font-bold opacity-50 mb-1 px-2">Immagini</div>
                             <button onClick={() => downloadImage('png')} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><ImageIcon size={14} /> Scarica PNG</button>
                             <button onClick={() => downloadImage('jpeg')} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><FileImage size={14} /> Scarica JPEG</button>
-                            <button onClick={downloadSVG} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><GitBranch size={14} /> Scarica SVG (Vettoriale)</button>
+                            <button onClick={downloadSVG} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><Shapes size={14} /> Scarica SVG (Vettoriale)</button>
 
                             <div className="h-px bg-gray-200 dark:bg-gray-600 my-2 opacity-30" />
 
@@ -1932,7 +1948,7 @@ export default function GenogramApp() {
 
                         <button onClick={addParentsToSelection} className="p-1.5 theme-hover rounded shrink-0" aria-label="Aggiungi Genitori" title="Aggiungi Genitori"><UserPlus size={18} /></button>
                         <button onClick={addSpouseToSelection} className="p-1.5 theme-hover rounded shrink-0" aria-label="Aggiungi Partner" title="Aggiungi Partner"><Heart size={18} /></button>
-                        <button onClick={addChildToSelection} className="p-1.5 theme-hover rounded shrink-0" aria-label="Aggiungi Figlio" title="Aggiungi Figlio"><GitBranch size={18} /></button>
+                        <button onClick={addChildToSelection} className="p-1.5 theme-hover rounded shrink-0" aria-label="Aggiungi Figlio" title="Aggiungi Figlio"><Baby size={18} /></button>
                         <button onClick={createGroup} aria-label="Gruppo" title="Gruppo" className="p-1.5 theme-hover rounded shrink-0"><Users size={20} /></button>
 
                         {/* --- CORREZIONE QUI (Rimosso il doppio <<) --- */}
@@ -1943,7 +1959,7 @@ export default function GenogramApp() {
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
                         <button onClick={autoLayout} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Auto-Layout" title="Auto-Layout"><Network size={18} /></button>
                         <button onClick={autoLayoutCM} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Layout Genogramma (Carter & McGoldrick)" title="Layout Genogramma (Carter & McGoldrick)"><GitBranch size={18} /></button>
-                        <button onClick={() => setShowMinuchin(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} title="Mappe Strutturali (Minuchin)"><LayoutGrid size={18} /></button>
+                        <button onClick={() => setShowMinuchin(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Mappe Strutturali (Minuchin)" title="Mappe Strutturali (Minuchin)"><Boxes size={18} /></button>
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
 
                         <button onClick={() => alignNodes('h')} className="p-1.5 theme-hover rounded shrink-0" title="Allinea Orizzontale"><AlignJustify size={18} /></button>

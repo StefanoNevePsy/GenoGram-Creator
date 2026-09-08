@@ -15,7 +15,7 @@ const ok = (cond, msg) => { console.log((cond ? 'PASS' : 'FAIL') + ' ' + msg); i
     page.on('pageerror', e => errors.push(e.message));
 
     await page.goto('http://localhost:5199/', { waitUntil: 'networkidle' });
-    await page.click('text=Nuovo');
+    await page.click('button:has-text("Nuovo"):visible');
     await page.waitForTimeout(400);
 
     // 1. Creazione nodo

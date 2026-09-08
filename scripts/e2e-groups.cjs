@@ -19,7 +19,7 @@ const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + ' ' + m); if (!c) fai
     const fresh = async () => {
         await page.evaluate(() => localStorage.clear());
         await page.goto('http://localhost:5199/', { waitUntil: 'networkidle' });
-        await page.click('text=Nuovo'); await page.waitForTimeout(300);
+        await page.click('button:has-text("Nuovo"):visible'); await page.waitForTimeout(300);
     };
     const makeGroup = async (x1, y1, x2, y2) => {
         await page.mouse.move(x1, y1); await page.keyboard.press('m'); await page.waitForTimeout(120);
