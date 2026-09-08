@@ -1,74 +1,34 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Plus, Check, X, Trash2, Edit3, Sun, Moon, StickyNote } from 'lucide-react';
 import type { NoteItem, CustomPreset, StickyNoteData } from '../types';
-import { BASE_REL_CONFIG, RELATION_CATEGORIES } from '../config/relationships';
 import { PRESET_THEMES, NOTE_BG_PALETTES, NOTE_TEXT_PALETTES, NOTE_FONTS, PASTEL_PALETTE, VIVID_PALETTE, NEUTRAL_PALETTE } from '../config/themes';
 import { generateId } from '../utils/genogram';
 import { extractYear } from '../utils/dates';
-import { LinePreview } from './canvas';
+import { RelationPickerGrid } from './canvas';
 
-export const QuickRelMenu = ({ x, y, mode, customPresets, onSelect, onClose }: { x: number, y: number, mode: 'child' | 'spouse' | 'link' | 'parents', customPresets: CustomPreset[], onSelect: (type: string) => void, onClose: () => void }) => {
-    // Le categorie restano RAGGRUPPATE (prima venivano appiattite con un reduce:
-    // con 80+ tipi la lista piatta era impraticabile). Più campo di ricerca.
-    const [query, setQuery] = useState('');
+export const QuickRelMenu = ({ x, y, mode, customPresets, onSelect, onClose, darkMode = false }: { x: number, y: number, mode: 'child' | 'spouse' | 'link' | 'parents', customPresets: CustomPreset[], onSelect: (type: string) => void, onClose: () => void, darkMode?: boolean }) => {
     const catNames: string[] = (mode === 'child' || mode === 'parents') ? ['Figli']
         : mode === 'spouse' ? ['Struttura / Coppia']
             : ['Interazione / Affettive', 'Conflitto e Distanza', 'Violenza, Abuso e Potere', 'Sociale / Contesto'];
 
-    const q = query.trim().toLowerCase();
-    const groups = catNames.map(cat => ({
-        cat,
-        items: (RELATION_CATEGORIES[cat] || [])
-            .map(key => { const conf = BASE_REL_CONFIG[key]; return conf ? { type: key, label: conf.label } : null; })
-            .filter((o): o is { type: string, label: string } => !!o && (!q || o.label.toLowerCase().includes(q)))
-    })).filter(g => g.items.length > 0);
-    const customs = customPresets
-        .map(p => ({ type: p.id, label: p.name }))
-        .filter(o => !q || o.label.toLowerCase().includes(q));
-    const total = groups.reduce((n, g) => n + g.items.length, 0) + customs.length;
-
-    const style: React.CSSProperties = { left: x, top: y };
-    if (x > window.innerWidth - 260) style.left = x - 260;
-    if (y > window.innerHeight - 300) style.top = y - 300;
+    const W = 300, H = 360;
+    const style: React.CSSProperties = {
+        left: Math.max(8, Math.min(x, window.innerWidth - W - 8)),
+        top: Math.max(8, Math.min(y, window.innerHeight - H - 8)),
+        width: W, maxHeight: H
+    };
 
     return (
-        <div className="fixed theme-panel shadow-2xl rounded-lg p-2 w-64 border theme-border z-[9999] flex flex-col max-h-80" style={style}>
-            <div className="text-[10px] font-bold opacity-50 uppercase px-2 py-1 rounded sticky top-0 flex justify-between items-center z-10 mb-1" style={{ backgroundColor: 'rgba(127,127,127,0.1)' }}>
+        <div className="fixed theme-panel shadow-2xl rounded-lg p-2 border theme-border z-[9999] flex flex-col" style={style}>
+            <div className="text-[10px] font-bold opacity-50 uppercase px-1 pb-1 flex justify-between items-center theme-text">
                 <span>Seleziona Tipo</span>
                 <button onClick={onClose} title="Chiudi" aria-label="Chiudi" className="hover:text-red-500"><X size={12} /></button>
             </div>
-            <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Cerca tipo di relazione…"
-                className="w-full mb-1 px-2 py-1.5 text-xs rounded border bg-transparent theme-border theme-text focus:outline-none focus:ring-1 focus:ring-[var(--theme-accent)]" />
-            <div className="overflow-y-auto flex-1 custom-scrollbar">
-                {groups.map(g => (
-                    <div key={g.cat}>
-                        <div className="text-[9px] font-bold uppercase opacity-45 px-2 pt-2 pb-1 sticky top-0 theme-panel">{g.cat}</div>
-                        {g.items.map(opt => (
-                            <button key={opt.type} onClick={() => onSelect(opt.type)} className="w-full flex items-center gap-2 p-2 text-xs theme-hover text-left border-b theme-border last:border-0">
-                                <div className="shrink-0"><LinePreview type={opt.type} /></div>
-                                <span className="truncate">{opt.label}</span>
-                            </button>
-                        ))}
-                    </div>
-                ))}
-                {customs.length > 0 && (
-                    <div>
-                        <div className="text-[9px] font-bold uppercase opacity-45 px-2 pt-2 pb-1 sticky top-0 theme-panel">Personalizzate</div>
-                        {customs.map(opt => (
-                            <button key={opt.type} onClick={() => onSelect(opt.type)} className="w-full flex items-center gap-2 p-2 text-xs theme-hover text-left border-b theme-border last:border-0">
-                                <div className="shrink-0"><LinePreview type={opt.type} /></div>
-                                <span className="truncate">{opt.label}</span>
-                            </button>
-                        ))}
-                    </div>
-                )}
-                {total === 0 && <div className="text-xs opacity-50 text-center py-4">Nessun tipo corrisponde a "{query}"</div>}
-            </div>
+            <RelationPickerGrid catNames={catNames} customPresets={customPresets} darkMode={darkMode} onPick={onSelect} />
         </div>
     );
 };
 
-// --- COMPONENTE PALETTE PICKER ---
 export const GROUP_PALETTES = {
     'Pastello': PASTEL_PALETTE,
     'Vividi': VIVID_PALETTE,

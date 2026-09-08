@@ -1808,7 +1808,7 @@ export default function GenogramApp() {
                 />
             )}
             {/* -------------------------------------- */}
-            {quickMenu && <QuickRelMenu x={quickMenu.x} y={quickMenu.y} mode={quickMenu.mode} customPresets={customPresets} onClose={() => setQuickMenu(null)} onSelect={(t) => { updateEdges(prev => prev.map(e => e.id === quickMenu.edgeId ? { ...e, type: t } : e)); setQuickMenu(null); }} />}
+            {quickMenu && <QuickRelMenu x={quickMenu.x} y={quickMenu.y} mode={quickMenu.mode} darkMode={darkMode} customPresets={customPresets} onClose={() => setQuickMenu(null)} onSelect={(t) => { updateEdges(prev => prev.map(e => e.id === quickMenu.edgeId ? { ...e, type: t } : e)); setQuickMenu(null); }} />}
             {showCategoryMenu && <div className="fixed inset-0 z-40" onClick={() => setShowCategoryMenu(false)} />}
 
             {/* --- HEADER --- */}
@@ -2441,7 +2441,7 @@ export default function GenogramApp() {
                                     )}
 
                                     <label className="text-xs opacity-50 font-bold block">Tipo Relazione</label>
-                                    <RelationshipSelector value={selectedEdge.type} onChange={(t: string) => {
+                                    <RelationshipSelector value={selectedEdge.type} darkMode={darkMode} onChange={(t: string) => {
                                         const conf = BASE_REL_CONFIG[t] || {};
                                         updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, type: t, color: conf.color, lineStyle: conf.lineStyle } : ed));
                                     }} className="text-black" />

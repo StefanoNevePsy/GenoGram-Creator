@@ -76,3 +76,25 @@ export const downloadJsonFile = (data: unknown, filename: string) => {
     a.click();
     URL.revokeObjectURL(url);
 };
+
+// --- TIPI DI RELAZIONE USATI DI RECENTE ---
+// Con 80+ tipi disponibili, ogni clinico ne usa davvero una decina: tenerli in
+// testa al picker è l'acceleratore maggiore. Persistiti per utente, non per
+// genogramma (è un'abitudine di lavoro, non un dato del caso).
+const RECENT_REL_KEY = 'genopro_recent_rels';
+
+export const readRecentRelations = (): string[] => {
+    try {
+        const s = localStorage.getItem(RECENT_REL_KEY);
+        const v = s ? JSON.parse(s) : [];
+        return Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
+    } catch { return []; }
+};
+
+export const pushRecentRelation = (type: string, max = 8) => {
+    try {
+        const list = readRecentRelations().filter(t => t !== type);
+        list.unshift(type);
+        localStorage.setItem(RECENT_REL_KEY, JSON.stringify(list.slice(0, max)));
+    } catch { /* quota o storage non disponibile: i recenti sono un extra */ }
+};

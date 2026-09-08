@@ -7,6 +7,73 @@ import { parseDate, calculateAge, calculateAgeAtDeath } from '../utils/dates';
 import { getMarriageBarY } from '../utils/genogram';
 import { getZigZagPath } from '../utils/geometry';
 
+import { readRecentRelations, pushRecentRelation } from '../services/storage';
+
+// --- PICKER A GRIGLIA DEI TIPI DI RELAZIONE ---
+// Condiviso dal menu rapido sul canvas e dal pannello proprietà.
+// Griglia invece di lista: con 80+ tipi la lista costringeva a scorrere molto,
+// mentre i simboli sono riconoscibili a colpo d'occhio. In testa i tipi usati
+// di recente; la ricerca filtra e Invio sceglie il primo risultato.
+export const RelationPickerGrid = ({ catNames, value, onPick, customPresets = [], darkMode = false, autoFocus = true }: {
+    catNames: string[], value?: string, onPick: (type: string) => void,
+    customPresets?: { id: string, name: string }[], darkMode?: boolean, autoFocus?: boolean
+}) => {
+    const [query, setQuery] = useState('');
+    const [recents, setRecents] = useState<string[]>(() => readRecentRelations());
+    const q = query.trim().toLowerCase();
+    const match = (label: string) => !q || label.toLowerCase().includes(q);
+
+    const groups = catNames.map(cat => ({
+        cat,
+        items: (RELATION_CATEGORIES[cat] || [])
+            .map(k => { const c = BASE_REL_CONFIG[k]; return c ? { type: k, label: c.label } : null; })
+            .filter((o): o is { type: string, label: string } => !!o && match(o.label))
+    })).filter(g => g.items.length > 0);
+
+    const customs = customPresets.map(p => ({ type: p.id, label: p.name })).filter(o => match(o.label));
+
+    // I recenti mostrati sono solo quelli pertinenti alle categorie in vista
+    const allowed = new Set(catNames.flatMap(c => RELATION_CATEGORIES[c] || []));
+    const recentItems = recents
+        .filter(t => allowed.has(t) && BASE_REL_CONFIG[t] && match(BASE_REL_CONFIG[t].label))
+        .map(t => ({ type: t, label: BASE_REL_CONFIG[t].label }));
+
+    const flat = [...recentItems, ...groups.flatMap(g => g.items), ...customs];
+
+    const pick = (t: string) => { pushRecentRelation(t); setRecents(readRecentRelations()); onPick(t); };
+
+    const Cell = ({ item }: { item: { type: string, label: string } }) => (
+        <button type="button" onClick={() => pick(item.type)} title={item.label} aria-label={item.label}
+            className={`flex flex-col items-center gap-1 px-1 py-1.5 rounded-lg border text-[9px] leading-tight text-center transition-colors ${value === item.type ? 'bg-black/5 dark:bg-white/10' : 'border-transparent hover:bg-black/5 dark:hover:bg-white/10'}`}
+            style={value === item.type ? { borderColor: 'var(--theme-accent)' } : undefined}>
+            <LinePreview type={item.type} width={44} darkMode={darkMode} transparent />
+            <span className="line-clamp-2 w-full theme-text">{item.label}</span>
+        </button>
+    );
+
+    const Section = ({ title, items }: { title: string, items: { type: string, label: string }[] }) => (
+        <div>
+            <div className="text-[9px] font-bold uppercase opacity-45 px-1 pt-2 pb-1 theme-text">{title}</div>
+            <div className="grid grid-cols-3 gap-0.5">{items.map(i => <Cell key={title + i.type} item={i} />)}</div>
+        </div>
+    );
+
+    return (
+        <div className="flex flex-col min-h-0">
+            <input autoFocus={autoFocus} value={query} onChange={e => setQuery(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && flat.length > 0) { e.preventDefault(); pick(flat[0].type); } }}
+                placeholder="Cerca tipo di relazione…"
+                className="w-full mb-1 px-2 py-1.5 text-xs rounded border bg-transparent theme-border theme-text focus:outline-none focus:ring-1 focus:ring-[var(--theme-accent)]" />
+            <div className="overflow-y-auto flex-1 custom-scrollbar pr-0.5">
+                {recentItems.length > 0 && <Section title="Usati di recente" items={recentItems} />}
+                {groups.map(g => <Section key={g.cat} title={g.cat} items={g.items} />)}
+                {customs.length > 0 && <Section title="Personalizzate" items={customs} />}
+                {flat.length === 0 && <div className="text-xs opacity-50 text-center py-4 theme-text">Nessun tipo corrisponde a "{query}"</div>}
+            </div>
+        </div>
+    );
+};
+
 export const Legend = ({ x, y, darkMode, nodes, edges }: { x: number, y: number, darkMode: boolean, nodes: GenNode[], edges: RelationEdge[] }) => {
     const bg = darkMode ? '#1f2937' : '#ffffff';
     const text = darkMode ? '#f3f4f6' : '#1f2937';
@@ -246,40 +313,32 @@ export const LinePreview = ({ type, width = 50, darkMode = false, transparent = 
 
 
 // ... RelationshipSelector (kept identical) ...
-export const RelationshipSelector = ({ value, onChange, className }: { value: string, onChange: (val: string) => void, className?: string }) => {
+export const RelationshipSelector = ({ value, onChange, className, darkMode = false }: { value: string, onChange: (val: string) => void, className?: string, darkMode?: boolean }) => {
     const [isOpen, setIsOpen] = useState(false);
     const selectedConfig = BASE_REL_CONFIG[value] || BASE_REL_CONFIG['custom'] || { label: value, color: '#000', lineStyle: 'solid', renderType: 'standard' };
+    const allCats = Object.keys(RELATION_CATEGORIES);
+
     return (
         <div className={`relative ${className}`}>
-            <button onClick={() => setIsOpen(!isOpen)} className="w-full flex items-center justify-between p-2 border rounded bg-white text-gray-900 dark:text-gray-100 dark:bg-gray-700 text-xs hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
-                <div className="flex items-center overflow-hidden"><LinePreview type={value} /><span className="truncate">{selectedConfig.label}</span></div><ChevronDown size={14} className="opacity-50 shrink-0 ml-1" />
+            <button onClick={() => setIsOpen(!isOpen)} aria-expanded={isOpen}
+                className="w-full flex items-center justify-between p-2 border rounded theme-panel theme-border theme-text text-xs hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
+                <div className="flex items-center overflow-hidden"><LinePreview type={value} darkMode={darkMode} /><span className="truncate">{selectedConfig.label}</span></div>
+                <ChevronDown size={14} className="opacity-50 shrink-0 ml-1" />
             </button>
             {isOpen && (
-                <div className="absolute top-full left-0 w-full mt-1 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded shadow-xl max-h-60 overflow-y-auto z-50 text-gray-900 dark:text-gray-100 text-left">
-                    {Object.entries(RELATION_CATEGORIES).map(([category, keys]) => (
-                        <div key={category}>
-                            <div className="px-2 py-1 bg-gray-100 dark:bg-gray-900 text-[9px] font-bold uppercase text-gray-500 sticky top-0 border-b border-gray-200 dark:border-gray-700">{category}</div>
-                            {keys.map((key: string) => {
-                                const conf = BASE_REL_CONFIG[key];
-                                if (!conf) return null;
-                                return (
-                                    <button key={key} onClick={() => { onChange(key); setIsOpen(false); }} className={`w-full flex items-center p-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/30 text-left border-b border-gray-50 dark:border-gray-700 ${value === key ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                                        <LinePreview type={key} /><span>{conf.label}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ))}
-                    <div className="p-1 sticky bottom-0 bg-white dark:bg-gray-800 border-t dark:border-gray-700">
-                        <button onClick={() => setIsOpen(false)} className="w-full py-1 text-center text-gray-400 hover:text-red-500 text-[10px]">Chiudi</button>
+                <>
+                    {/* click fuori per chiudere: prima si poteva uscire solo col bottone "Chiudi" */}
+                    <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+                    <div className="absolute top-full right-0 mt-1 w-[288px] max-w-[85vw] max-h-72 theme-panel border theme-border rounded-lg shadow-xl z-50 p-2 flex flex-col">
+                        <RelationPickerGrid catNames={allCats} value={value} darkMode={darkMode}
+                            onPick={(t) => { onChange(t); setIsOpen(false); }} />
                     </div>
-                </div>
+                </>
             )}
         </div>
     );
 };
 
-// ... ConnectionLine, NodeShape, QuickRelMenu (Standard components) ...
 export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customConfig, onSelect, onAddChild, isTargetGroup, tNode }: any) => {
     // Same content as previous, keeping logic for decorators
     let baseConfig = BASE_REL_CONFIG[edge.type];
