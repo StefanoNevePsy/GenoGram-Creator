@@ -156,6 +156,18 @@ references) — non usarlo come verifica.
       Test: scripts/e2e-decorator-angle.cjs (stato iniettato: 0° su orizzontale,
       -45° su diagonale). In LinePreview restano fissi: la legenda è orizzontale.
 
+- [x] **Espansione simboli (+30 relazioni, 53 → 83)** e nuovi dati persona.
+      Bug trovati dall'audit e corretti: `two-circles-center` (Innamorati) e
+      `twin-link-bar` (Gemelli Monozigoti) erano configurati ma NON resi — la prima
+      appariva identica ad Armonia, i monozigoti identici ai dizigoti;
+      `triple-zigzag-center` mancava in LinePreview (legenda). Inoltre
+      `physicalIssue` e `recovery` erano nel tipo e nel report ma senza toggle né
+      simbolo: dati irraggiungibili, ora attivati.
+      Nuovi renderType: bars-center, triangle-center, dot-center, zigzag-overlay
+      (+ i due corretti). Nuova categoria "Sociale / Contesto".
+      Nuovi dati persona: disability, causeOfDeath, education, religion, ethnicity.
+      Test: scripts/e2e-symbols.cjs (stato iniettato, 7 check).
+
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.
 - Tipi puri con `import type` (verbatimModuleSyntax attivo).

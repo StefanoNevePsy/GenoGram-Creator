@@ -8,6 +8,11 @@ export interface GenNode {
     alcoholAbuse?: boolean;
     behavioralAddiction?: boolean; eatingDisorder?: boolean; institutionalized?: boolean;
     profession?: string;
+    disability?: boolean;       // disabilità
+    causeOfDeath?: string;      // causa del decesso
+    education?: string;         // titolo di studio
+    religion?: string;          // religione / spiritualità
+    ethnicity?: string;         // etnia / origine culturale
     birthOrder?: number;        // ordine di nascita esplicito (per fratelli senza data)
     immigrationYear?: string;   // anno di immigrazione/trasferimento
     donorConceived?: boolean;   // nato/a da PMA / donazione

@@ -30,6 +30,9 @@ export const Legend = ({ x, y, darkMode, nodes, edges }: { x: number, y: number,
         { key: 'institutionalized', label: 'Istituzionalizzato', present: nodes.some(n => n.institutionalized) },
         { key: 'donorConceived', label: 'PMA / Donazione', present: nodes.some(n => n.donorConceived) },
         { key: 'immigrationYear', label: 'Immigrazione', present: nodes.some(n => n.immigrationYear) },
+        { key: 'physicalIssue', label: 'Problema Fisico', present: nodes.some(n => n.physicalIssue) },
+        { key: 'recovery', label: 'In Recovery', present: nodes.some(n => n.recovery) },
+        { key: 'disability', label: 'Disabilità', present: nodes.some(n => n.disability) },
     ].filter(m => m.present);
 
     // Mini-glifo 16x16 fedele al rendering del simbolo
@@ -45,6 +48,9 @@ export const Legend = ({ x, y, darkMode, nodes, edges }: { x: number, y: number,
             case 'institutionalized': return <g><rect x="4" y="4" width="8" height="8" stroke={text} fill="none" /><path d="M2.5,2 L0.5,2 L0.5,14 L2.5,14 M13.5,2 L15.5,2 L15.5,14 L13.5,14" stroke={text} strokeWidth="1.2" fill="none" /></g>;
             case 'donorConceived': return <g>{box}<polygon points="8,4.5 11.5,11 4.5,11" stroke={text} strokeWidth="1" fill="none" /><text x="8" y="10.4" fontSize="5" fill={text} textAnchor="middle" fontWeight="700" fontFamily="sans-serif">D</text></g>;
             case 'immigrationYear': return <g>{box}<line x1="5" y1="11" x2="11" y2="5" stroke={text} strokeWidth="1.4" /><polygon points="11,5 7.8,5.6 10.4,8.2" fill={text} /></g>;
+            case 'physicalIssue': return <g>{box}<rect x="10" y="2.8" width="3.2" height="10.4" fill="#0891b2" fillOpacity="0.85" /></g>;
+            case 'recovery': return <g>{box}<line x1="3.5" y1="12.5" x2="12.5" y2="8" stroke="#16a34a" strokeWidth="2.2" strokeLinecap="round" /></g>;
+            case 'disability': return <g>{box}<g stroke="#0d9488" strokeWidth="1.5" fill="none"><path d="M 4 12.5 a 3.2 3.2 0 0 1 6.4 0" /><path d="M 6 12.5 a 1.2 1.2 0 0 1 2.4 0" /></g></g>;
             default: return box;
         }
     };
@@ -197,6 +203,15 @@ export const LinePreview = ({ type, width = 50, darkMode = false, transparent = 
         if (config.renderType === 'triple-zigzag-center-arrow') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /><path d={getZigZagPath(0, midY, actualEndX, midY, 3, 8)} stroke="red" strokeWidth={1.5} fill="none" /><polygon points="-5,-4 5,0 -5,4" fill="red" transform={arrowTrans} /></g>;
 
         if (config.renderType === 'triangle-up-center') return <polygon points="-5,0 5,0 0,-8" fill={stroke} transform={centerArrowTrans} />;
+
+        // Anteprime dei simboli aggiunti (legenda e menu di scelta relazione)
+        if (config.renderType === 'two-circles-center') return <g transform={centerArrowTrans}><circle cx={-3} cy={0} r={4} fill="none" stroke={stroke} strokeWidth={1.5} /><circle cx={3} cy={0} r={4} fill="none" stroke={stroke} strokeWidth={1.5} /></g>;
+        if (config.renderType === 'twin-link-bar') return <g transform={centerArrowTrans}><line x1={0} y1={-6} x2={0} y2={6} stroke={stroke} strokeWidth={2} /></g>;
+        if (config.renderType === 'bars-center') return <g transform={centerArrowTrans}><line x1={-3} y1={-6} x2={-3} y2={6} stroke={stroke} strokeWidth={2} /><line x1={3} y1={-6} x2={3} y2={6} stroke={stroke} strokeWidth={2} /></g>;
+        if (config.renderType === 'zigzag-overlay') return <path d={getZigZagPath(0, midY, actualEndX, midY, 3, 8)} stroke="#dc2626" strokeWidth={1.5} fill="none" />;
+        if (config.renderType === 'triangle-center') return <polygon points="-5,-4 5,-4 0,5" fill={stroke} transform={centerArrowTrans} />;
+        if (config.renderType === 'dot-center') return <circle r={3.5} fill={stroke} transform={centerArrowTrans} />;
+        if (config.renderType === 'triple-zigzag-center') return <g><path d={getZigZagPath(0, midY, actualEndX, midY, 3, 8)} stroke="#dc2626" strokeWidth={1.5} fill="none" /></g>;
 
         if (config.renderType === 'arrow-thick') return <polygon points="-6,-6 4,0 -6,6" fill={stroke} transform={arrowTrans} />;
         if (config.renderType === 'double-arrow-inward') {
@@ -372,6 +387,21 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
 
         if (renderType === 'triangle-up-center') return <polygon points="-6,0 6,0 0,-10" fill={stroke} transform={centerArrowTrans} />;
 
+        // Innamorati: due anelli intrecciati al centro (prima non era reso: la
+        // relazione appariva come una linea verde piena, identica ad Armonia)
+        if (renderType === 'two-circles-center') return <g transform={centerArrowTrans}><circle cx={-4} cy={0} r={6} fill="none" stroke={stroke} strokeWidth={2} /><circle cx={4} cy={0} r={6} fill="none" stroke={stroke} strokeWidth={2} /></g>;
+        // Gemelli monozigoti: barra perpendicolare che li distingue dai dizigoti
+        // (prima non era resa: monozigoti e dizigoti erano indistinguibili)
+        if (renderType === 'twin-link-bar') return <g transform={centerArrowTrans}><line x1={0} y1={-9} x2={0} y2={9} stroke={stroke} strokeWidth={2.5} /></g>;
+        // Unione civile: due barre parallele perpendicolari alla linea
+        if (renderType === 'bars-center') return <g transform={centerArrowTrans}><line x1={-4} y1={-9} x2={-4} y2={9} stroke={stroke} strokeWidth={2.5} /><line x1={4} y1={-9} x2={4} y2={9} stroke={stroke} strokeWidth={2.5} /></g>;
+        // Ambivalente: legame pieno con zigzag rosso sovrapposto (amore + odio)
+        if (renderType === 'zigzag-overlay') return <path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY, 4, 14)} stroke="#dc2626" strokeWidth={1.5} fill="none" />;
+        // Genitorializzazione: triangolo pieno al centro (inversione di ruolo)
+        if (renderType === 'triangle-center') return <polygon points="-7,-6 7,-6 0,7" fill={stroke} transform={centerArrowTrans} />;
+        // Punto pieno al centro: legame marcato (confidente, donazione, sospetto…)
+        if (renderType === 'dot-center') return <circle r={5} fill={stroke} transform={centerArrowTrans} />;
+
         if (renderType === 'double-arrow-inward') {
             const dx = actualEndX - start.x; const dy = actualEndY - start.y;
             const ang = Math.atan2(dy, dx) * 180 / Math.PI;
@@ -481,6 +511,26 @@ export const PersonSymbol = ({ node, darkMode, isSelected = false }: { node: Gen
                 node.gender === 'M'
                     ? <rect x={4} y={4} width={w - 8} height={h - 8} stroke="#e11d48" strokeWidth={1.5} strokeDasharray="3 2" fill="none" />
                     : <circle cx={w / 2} cy={h / 2} r={r - 4} stroke="#e11d48" strokeWidth={1.5} strokeDasharray="3 2" fill="none" />
+            )}
+
+            {/* Problema Fisico: banda ciano a destra (era dichiarato nel tipo ma mai reso) */}
+            {node.physicalIssue && (
+                node.gender === 'M'
+                    ? <rect x={(w * 2) / 3} y={0} width={w / 3} height={h} fill="#0891b2" fillOpacity="0.8" stroke="none" />
+                    : <path d={`M ${r} 0 A ${r} ${r} 0 0 1 ${r} ${h} Z`} fill="#0891b2" fillOpacity="0.8" stroke="none" />
+            )}
+
+            {/* In Recovery: barra diagonale verde sulla metà inferiore (era dichiarato ma mai reso) */}
+            {node.recovery && (
+                <line x1={2} y1={h - 2} x2={w - 2} y2={h / 2} stroke="#16a34a" strokeWidth={3} strokeLinecap="round" />
+            )}
+
+            {/* Disabilità: doppio semicerchio in basso a sinistra */}
+            {node.disability && (
+                <g stroke="#0d9488" strokeWidth={2} fill="none">
+                    <path d={`M 3 ${h - 4} a 5 5 0 0 1 10 0`} />
+                    <path d={`M 6 ${h - 4} a 2.2 2.2 0 0 1 4.4 0`} />
+                </g>
             )}
 
             {/* Omosessualità: Rosa (Triangolo Inverso) */}

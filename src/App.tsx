@@ -1104,7 +1104,7 @@ export default function GenogramApp() {
         // FIX: Legenda in alto a sinistra (Top-Left Corner)
         if (showLegend) {
             // Stima altezza legenda
-            const clinicalCount = [nodes.some(n => n.substanceAbuse), nodes.some(n => n.alcoholAbuse), nodes.some(n => n.mentalIssue), nodes.some(n => n.gayLesbian), nodes.some(n => n.behavioralAddiction), nodes.some(n => n.eatingDisorder), nodes.some(n => n.institutionalized), nodes.some(n => n.donorConceived), nodes.some(n => n.immigrationYear)].filter(Boolean).length;
+            const clinicalCount = [nodes.some(n => n.substanceAbuse), nodes.some(n => n.alcoholAbuse), nodes.some(n => n.mentalIssue), nodes.some(n => n.gayLesbian), nodes.some(n => n.behavioralAddiction), nodes.some(n => n.eatingDisorder), nodes.some(n => n.institutionalized), nodes.some(n => n.donorConceived), nodes.some(n => n.immigrationYear), nodes.some(n => n.physicalIssue), nodes.some(n => n.recovery), nodes.some(n => n.disability)].filter(Boolean).length;
             const usedGenders = new Set(nodes.map(n => n.gender)).size + (nodes.some(n => n.deceased) ? 1 : 0) + (nodes.some(n => n.indexPerson) ? 1 : 0) + clinicalCount;
             const usedRels = new Set(edges.map(e => e.type)).size;
             const estimatedH = 80 + (Math.max(usedGenders, usedRels) * 24) + 20;
@@ -1347,6 +1347,10 @@ export default function GenogramApp() {
             if (options.showBirthDate && n.deceased && n.deathDate) detailsParts.push(`† ${n.deathDate}`);
             if (n.profession) detailsParts.push(n.profession);
             if (n.immigrationYear) detailsParts.push(`immigrato/a ${n.immigrationYear}`);
+            if (n.education) detailsParts.push(n.education);
+            if (n.religion) detailsParts.push(n.religion);
+            if (n.ethnicity) detailsParts.push(n.ethnicity);
+            if (n.deceased && n.causeOfDeath) detailsParts.push(`causa: ${n.causeOfDeath}`);
             if (options.showAge && n.birthDate) detailsParts.push(n.deceased && n.deathDate ? `${calculateAgeAtDeath(n.birthDate, n.deathDate)} anni (al decesso)` : `${calculateAge(n.birthDate)} anni`);
 
             const detailsString = detailsParts.length > 0 ? `<small style="font-weight:normal; color:#666;">(${detailsParts.join(', ')})</small>` : '';
@@ -1364,6 +1368,9 @@ export default function GenogramApp() {
             if (n.eatingDisorder) clinicalInfo.push("Disturbo Alimentare");
             if (n.institutionalized) clinicalInfo.push("Istituzionalizzato");
             if (n.donorConceived) clinicalInfo.push("Nato/a da PMA/donazione");
+            if (n.physicalIssue) clinicalInfo.push("Problema Fisico");
+            if (n.recovery) clinicalInfo.push("In Recovery");
+            if (n.disability) clinicalInfo.push("Disabilità");
 
             return `
             <div class="person-card">
@@ -2280,9 +2287,17 @@ export default function GenogramApp() {
                                         <input type="number" min="1" className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.birthOrder ?? ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthOrder: e.target.value === '' ? undefined : parseInt(e.target.value) } : n))} placeholder="Ordine nascita" title="Ordine di nascita esplicito: usato dal layout C&M quando mancano le date" />
                                         <input className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.immigrationYear || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, immigrationYear: e.target.value } : n))} placeholder="Anno immigrazione" />
                                     </div>
+                                    <div className="flex gap-2">
+                                        <input className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.education || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, education: e.target.value } : n))} placeholder="Titolo di studio" />
+                                        <input className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.religion || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, religion: e.target.value } : n))} placeholder="Religione" />
+                                    </div>
+                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.ethnicity || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, ethnicity: e.target.value } : n))} placeholder="Etnia / origine culturale" />
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: e.target.value } : n))} placeholder="Nascita (Data, Anno o inserisci direttamente un'Età)" />
                                     {selectedNode.deceased && (
                                         <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.deathDate || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, deathDate: e.target.value } : n))} placeholder="Morte (Data o Anno)" />
+                                    )}
+                                    {selectedNode.deceased && (
+                                        <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.causeOfDeath || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, causeOfDeath: e.target.value } : n))} placeholder="Causa del decesso" />
                                     )}
 
                                     <div className="flex items-center gap-2 mb-1">
@@ -2317,6 +2332,9 @@ export default function GenogramApp() {
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.eatingDisorder ? 'bg-rose-600 text-white' : 'theme-border hover:bg-rose-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, eatingDisorder: !n.eatingDisorder } : n))}>Dist. Alimentare</button>
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.institutionalized ? 'bg-slate-600 text-white' : 'theme-border hover:bg-slate-100'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, institutionalized: !n.institutionalized } : n))}>Istituzionaliz.</button>
                                         <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.donorConceived ? 'bg-indigo-500 text-white' : 'theme-border hover:bg-indigo-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, donorConceived: !n.donorConceived } : n))}>PMA/Donaz.</button>
+                                        <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.physicalIssue ? 'bg-cyan-600 text-white' : 'theme-border hover:bg-cyan-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, physicalIssue: !n.physicalIssue } : n))}>Problema Fisico</button>
+                                        <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.recovery ? 'bg-green-600 text-white' : 'theme-border hover:bg-green-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, recovery: !n.recovery } : n))}>In Recovery</button>
+                                        <button className={`border px-2 py-1 text-xs rounded transition-colors ${selectedNode.disability ? 'bg-teal-600 text-white' : 'theme-border hover:bg-teal-50'}`} onClick={() => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, disability: !n.disability } : n))}>Disabilità</button>
                                     </div>
 
                                     <NotesPanel notes={selectedNode.notes} onChange={newNotes => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, notes: newNotes } : n))} />

@@ -12,7 +12,8 @@ export type RelationshipConfig = {
     | 'fusion' | 'best-friend' | 'fusion-hostile' | 'double-zigzag' | 'triple-zigzag-center' | 'triple-zigzag-center-arrow'
     | 'zigzag-overlay' | 'twin-link' | 'twin-link-bar' | 'two-circles-center' | 'double-arrow-inward'
     | 'oblique' | 'oblique-double' | 'x-cross' | 'oblique-double-crossed'
-    | 'triangle-up-center' | 'dashed-inner';
+    | 'triangle-up-center' | 'dashed-inner'
+    | 'bars-center' | 'triangle-center' | 'dot-center';
     decorator?: string;
 };
 
@@ -79,6 +80,49 @@ export const BASE_REL_CONFIG: Record<string, RelationshipConfig> = {
     'neglect': { label: 'Trascuratezza', color: '#808080', lineStyle: 'dashed', renderType: 'double-arrow-inward' },
     'violence-mutual': { label: 'Violenza Reciproca', color: '#FF0000', lineStyle: 'zigzag', renderType: 'arrow-open-both' },
 
+    // --- ESPANSIONE SIMBOLI ---
+    // Struttura / Coppia
+    'civil-union': { label: 'Unione Civile', color: '#000000', lineStyle: 'solid', renderType: 'bars-center' },
+    'annulment': { label: 'Annullamento', color: '#000000', lineStyle: 'solid', renderType: 'cutoff-double' },
+    'dating': { label: 'Frequentazione', color: '#000000', lineStyle: 'dotted', renderType: 'standard' },
+
+    // Figli
+    'child-step': { label: 'Figlio Acquisito', color: '#7c3aed', lineStyle: 'dashed', renderType: 'standard' },
+    'child-donor': { label: 'Concepito con Donazione', color: '#4f46e5', lineStyle: 'solid', renderType: 'dot-center' },
+    'child-surrogacy': { label: 'Gestazione per Altri', color: '#4f46e5', lineStyle: 'dashed', renderType: 'dot-center' },
+    'child-ward': { label: 'Tutela Legale', color: '#64748b', lineStyle: 'dotted', renderType: 'standard' },
+    'twin-unknown': { label: 'Gemelli (zigosità ignota)', color: '#000000', lineStyle: 'solid', renderType: 'twin-link' },
+
+    // Interazione / Affettive
+    'ambivalent': { label: 'Ambivalente (amore-odio)', color: '#000000', lineStyle: 'solid', renderType: 'zigzag-overlay' },
+    'parentified': { label: 'Genitorializzazione', color: '#b45309', lineStyle: 'solid', renderType: 'triangle-center' },
+    'confidant': { label: 'Confidente', color: '#008000', lineStyle: 'solid', renderType: 'dot-center' },
+    'mentor': { label: 'Mentore / Guida', color: '#008000', lineStyle: 'solid', renderType: 'arrow-end' },
+    'dependency': { label: 'Dipendenza Affettiva', color: '#0891b2', lineStyle: 'solid', renderType: 'arrow-open-center' },
+    'idealization': { label: 'Idealizzazione', color: '#0891b2', lineStyle: 'dashed', renderType: 'arrow-end' },
+    'rivalry': { label: 'Rivalità', color: '#f59e0b', lineStyle: 'solid', renderType: 'double-arrow-inward' },
+
+    // Conflitto e Distanza
+    'indifferent': { label: 'Indifferenza', color: '#9ca3af', lineStyle: 'dotted', renderType: 'dot-center' },
+    'mistrust': { label: 'Sfiducia / Sospetto', color: '#78716c', lineStyle: 'dashed', renderType: 'dot-center' },
+    'contempt': { label: 'Disprezzo', color: '#dc2626', lineStyle: 'dashed', renderType: 'arrow-end' },
+    'betrayal': { label: 'Tradimento', color: '#dc2626', lineStyle: 'solid', renderType: 'cutoff-double' },
+
+    // Violenza, Abuso e Potere
+    'stalking': { label: 'Stalking / Persecuzione', color: '#FF0000', lineStyle: 'dashed', renderType: 'arrow-thick' },
+    'economic-abuse': { label: 'Violenza Economica', color: '#800000', lineStyle: 'solid', renderType: 'arrow-box-center' },
+    'bullying': { label: 'Bullismo', color: '#FF0000', lineStyle: 'zigzag', renderType: 'arrow-end' },
+    'overprotection': { label: 'Iperprotezione', color: '#7c3aed', lineStyle: 'solid', renderType: 'double-arrow-inward' },
+    'emotional-blackmail': { label: 'Ricatto Affettivo', color: '#be123c', lineStyle: 'solid', renderType: 'arrow-diamond-center' },
+    'abandonment': { label: 'Abbandono', color: '#78716c', lineStyle: 'dotted', renderType: 'arrow-end' },
+
+    // Sociale / Contesto
+    'colleague': { label: 'Collega', color: '#0369a1', lineStyle: 'solid', renderType: 'standard' },
+    'neighbor': { label: 'Vicino di Casa', color: '#0369a1', lineStyle: 'dotted', renderType: 'standard' },
+    'teacher-student': { label: 'Insegnante–Allievo', color: '#0369a1', lineStyle: 'dashed', renderType: 'arrow-end' },
+    'therapeutic': { label: 'Rapporto Terapeutico', color: '#7c3aed', lineStyle: 'dashed', renderType: 'dot-center' },
+    'legal-guardian': { label: 'Tutore Legale', color: '#0369a1', lineStyle: 'solid', renderType: 'arrow-end' },
+
     'custom': { label: 'Personalizzata', color: '#000000', lineStyle: 'solid', renderType: 'standard' }
 };
 
@@ -87,16 +131,22 @@ export const RELATION_CATEGORIES: Record<string, string[]> = {
         'marriage', 'secret', 'cohabitation', 'couple', 'divorce-commit',
         'separation', 'separation-repaired', 'separation-cohab',
         'divorce', 'divorce-repaired', 're-marriage',
-        'engagement', 'engagement-cohab', 'affair', 'one-night'
+        'engagement', 'engagement-cohab', 'affair', 'one-night',
+        'civil-union', 'annulment', 'dating'
     ],
-    "Figli": ['child-bio', 'child-adopted', 'child-foster', 'twin-dizygotic', 'twin-monozygotic', 'pregnancy'],
-    "Interazione / Affettive": ['correlated', 'harmony', 'friendship', 'best-friend', 'close', 'fusion', 'in-love', 'fan', 'spiritual'],
-    "Conflitto e Distanza": ['distance', 'poor', 'hostile', 'close-hostile', 'fusion-hostile', 'hate', 'cutoff', 'restored'],
+    "Figli": ['child-bio', 'child-adopted', 'child-foster', 'child-step', 'child-donor', 'child-surrogacy', 'child-ward',
+        'twin-dizygotic', 'twin-monozygotic', 'twin-unknown', 'pregnancy'],
+    "Interazione / Affettive": ['correlated', 'harmony', 'friendship', 'best-friend', 'close', 'fusion', 'in-love', 'fan', 'spiritual',
+        'ambivalent', 'parentified', 'confidant', 'mentor', 'dependency', 'idealization', 'rivalry'],
+    "Conflitto e Distanza": ['distance', 'poor', 'hostile', 'close-hostile', 'fusion-hostile', 'hate', 'cutoff', 'restored',
+        'indifferent', 'mistrust', 'contempt', 'betrayal'],
     "Violenza, Abuso e Potere": [
         'violence-psychological', 'violence-physical', 'violence-sexual',
         'abuse-physical', 'abuse-emotional', 'abuse-sexual', 'neglect', 'violence-mutual',
-        'focused', 'focused-negative', 'companions', 'manipulative', 'controlling', 'keeper'
+        'focused', 'focused-negative', 'companions', 'manipulative', 'controlling', 'keeper',
+        'stalking', 'economic-abuse', 'bullying', 'overprotection', 'emotional-blackmail', 'abandonment'
     ],
+    "Sociale / Contesto": ['colleague', 'neighbor', 'teacher-student', 'therapeutic', 'legal-guardian'],
     "Altro": ['custom']
 };
 
