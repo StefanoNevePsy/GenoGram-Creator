@@ -22,7 +22,7 @@ export const famigliaColore = (hex: string): string => {
     if (hue < 70) return 'oro';
     if (hue < 170) return 'verde';
     if (hue < 200) return 'ottanio';
-    if (hue < 270) return 'blu';
+    if (hue < 250) return 'blu';
     if (hue < 320) return 'viola';
     return 'rosa';
 };

@@ -109,7 +109,7 @@ export const Legend = ({ x, y, darkMode, nodes, edges }: { x: number, y: number,
         switch (key) {
             case 'substanceAbuse': return <g>{box}<rect x="2.8" y="8" width="10.4" height="5.2" fill="var(--geno-arancio, #f97316)" fillOpacity="0.85" /></g>;
             case 'alcoholAbuse': return <g>{box}<rect x="2.8" y="8" width="10.4" height="5.2" fill="var(--geno-marrone, #92400e)" fillOpacity="0.9" /></g>;
-            case 'mentalIssue': return <g>{box}<rect x="2.8" y="2.8" width="4" height="10.4" fill="var(--geno-blu, #8b5cf6)" fillOpacity="0.85" /></g>;
+            case 'mentalIssue': return <g>{box}<rect x="2.8" y="2.8" width="4" height="10.4" fill="var(--geno-viola, #8b5cf6)" fillOpacity="0.85" /></g>;
             case 'gayLesbian': return <g>{box}<polygon points="5.5,9.5 10.5,9.5 8,13.2" fill="var(--geno-rosa, #ec4899)" /></g>;
             case 'behavioralAddiction': return <g>{box}<g stroke="var(--geno-ottanio, #14b8a6)" strokeWidth="1.4"><line x1="4" y1="9" x2="12" y2="9" /><line x1="4.5" y1="11" x2="11.5" y2="11" /><line x1="5" y1="13" x2="11" y2="13" /></g></g>;
             case 'eatingDisorder': return <g>{box}<rect x="4" y="4" width="8" height="8" stroke="var(--geno-rosso, #e11d48)" strokeWidth="1" strokeDasharray="2,1.5" fill="none" /></g>;
@@ -556,8 +556,8 @@ export const PersonSymbol = ({ node, darkMode, isSelected = false }: { node: Gen
             {/* Problema Psi: Viola (Left Half) */}
             {node.mentalIssue && (
                 node.gender === 'M'
-                    ? <rect x={0} y={0} width={w / 3} height={h} fill="var(--geno-blu, #8b5cf6)" fillOpacity="0.8" stroke="none" />
-                    : <path d={`M ${r} 0 A ${r} ${r} 0 0 0 ${r} ${h} Z`} fill="var(--geno-blu, #8b5cf6)" fillOpacity="0.8" stroke="none" />
+                    ? <rect x={0} y={0} width={w / 3} height={h} fill="var(--geno-viola, #8b5cf6)" fillOpacity="0.8" stroke="none" />
+                    : <path d={`M ${r} 0 A ${r} ${r} 0 0 0 ${r} ${h} Z`} fill="var(--geno-viola, #8b5cf6)" fillOpacity="0.8" stroke="none" />
             )}
 
             {/* Dipendenza Comportamentale: Teal (righe orizzontali metà inferiore) */}
