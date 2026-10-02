@@ -10,7 +10,10 @@ export type AppTheme = {
         text: string;        // Testo Principale
         textMuted: string;   // Testo Secondario
         accent: string;      // Colore Accento (Blu, Viola, ecc)
-    }
+    };
+    // Temi con uno stile completo (caratteri, carta, colori dei simboli), es. PsyDiary
+    stile?: 'psydiary';
+    geno?: Record<string, string>;
 };
 
 // --- DEFINIZIONE PALETTE GLOBALI ---
@@ -55,6 +58,7 @@ export const NOTE_TEXT_COLORS = [
 export const NOTE_FONTS = [
     { label: 'App Default', value: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }, // Font standard dell'app
     { label: 'Handwriting', value: '"Comic Sans MS", "Chalkboard SE", sans-serif' },
+    { label: 'PsyDiary a mano', value: '"La Belle Aurore", "Bradley Hand", cursive' },
     { label: 'Sans Serif', value: 'ui-sans-serif, system-ui, sans-serif' },
     { label: 'Serif', value: 'ui-serif, Georgia, serif' },
     { label: 'Monospace', value: 'ui-monospace, monospace' },
@@ -73,6 +77,12 @@ export const PRESET_THEMES: AppTheme[] = [
     {
         id: 'nordic', label: 'Nordic Snow', type: 'light',
         colors: { bgMain: '#eceff4', bgPanel: '#e5e9f0', border: '#d8dee9', text: '#2e3440', textMuted: '#4c566a', accent: '#5e81ac' }
+    },
+    {
+        // Lo stile di PsyDiary: carta, inchiostro blu-nero, vermiglio, Gloock/Archivo/La Belle Aurore
+        id: 'psydiary-chiaro', label: 'PsyDiary · Carta', type: 'light', stile: 'psydiary',
+        colors: { bgMain: '#f6f0e6', bgPanel: '#f1e9db', border: '#c9c2b6', text: '#1a2131', textMuted: '#4f5563', accent: '#c74a31' },
+        geno: { nero: '#1a2131', carta: '#f6f0e6', carta2: '#f1e9db', grigio: '#757a85', bordo: '#c9c2b6', verde: '#287c42', rosso: '#c9302d', bordeaux: '#822b31', marrone: '#7a4a24', arancio: '#e2832d', oro: '#bd9121', ottanio: '#227a7a', blu: '#325caf', viola: '#7b489e', rosa: '#d14186' }
     },
     // DARK THEMES
     {
@@ -94,6 +104,11 @@ export const PRESET_THEMES: AppTheme[] = [
     {
         id: 'forest', label: 'Forest Night', type: 'dark',
         colors: { bgMain: '#0d1117', bgPanel: '#161b22', border: '#30363d', text: '#c9d1d9', textMuted: '#8b949e', accent: '#238636' }
+    },
+    {
+        id: 'psydiary-scuro', label: 'PsyDiary · Inchiostro', type: 'dark', stile: 'psydiary',
+        colors: { bgMain: '#10141b', bgPanel: '#181c24', border: '#3b3d40', text: '#ede7dc', textMuted: '#b7b0a5', accent: '#ef7c59' },
+        geno: { nero: '#ede7dc', carta: '#10141b', carta2: '#181c24', grigio: '#857f76', bordo: '#3b3d40', verde: '#6fc884', rosso: '#f97165', bordeaux: '#d56e78', marrone: '#c08a5a', arancio: '#f8a052', oro: '#eac25a', ottanio: '#64c3c3', blu: '#81aaf7', viola: '#c295e3', rosa: '#fa86b6' }
     }
 ];
 
