@@ -56,7 +56,12 @@ jobs:
           java-version: '21'
           cache: gradle
 
+      # solo platform-tools: il pacchetto predefinito "tools" non esiste più
+      # nell'SDK e farebbe fallire l'installazione; piattaforma e build-tools
+      # li scarica Gradle quando servono
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - run: npm ci
 
