@@ -18,6 +18,7 @@ export interface GenNode {
     donorConceived?: boolean;   // nato/a da PMA / donazione
     gayLesbian: boolean;
     showAge?: boolean;
+    inAttesa?: boolean;         // creata da una mappa Minuchin, da sistemare nel genogramma (cartiglio)
     notes: NoteItem[];
 }
 export interface RelationEdge { id: string; fromId: string; toId: string; type: string; startDate?: string; color?: string; lineStyle?: string; decorator?: string; label: string; notes: NoteItem[]; fromAnchor?: number; toAnchor?: number; }

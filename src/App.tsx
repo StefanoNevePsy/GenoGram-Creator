@@ -764,13 +764,24 @@ export default function GenogramApp() {
         setView('editor');
     };
     // --- CARTIGLIO: area di parcheggio per persone create dalle mappe Minuchin ---
-    const STAGING = { x: CENTER_POS - 760, y: CENTER_POS - 520, cols: 3, dx: 110, dy: 120 };
-    const stagingBounds = { x1: STAGING.x - 30, y1: STAGING.y - 30, x2: STAGING.x + STAGING.cols * STAGING.dx + 10, y2: STAGING.y + 8 * STAGING.dy };
+    // Una persona è "in attesa" solo se creata da una mappa (segno inAttesa): il
+    // segno si toglie quando la si trascina nel genogramma. Il parcheggio sta a
+    // sinistra del genogramma, ovunque sia. (Prima si riconosceva dalla posizione
+    // in un riquadro fisso della tela, e la cornice compariva anche attorno a
+    // persone vere che si trovavano lì.)
+    const STAGING = { cols: 3, dx: 110, dy: 120 };
     const addPersonFromMap = (name: string, gender: Gender): string => {
-        const inStaging = nodesRef.current.filter(n => n.x >= stagingBounds.x1 && n.x <= stagingBounds.x2 && n.y >= stagingBounds.y1 && n.y <= stagingBounds.y2);
-        const i = inStaging.length;
+        const tutti = nodesRef.current;
+        const inAttesa = tutti.filter(n => n.inAttesa);
+        const veri = tutti.filter(n => !n.inAttesa);
+        const origine = inAttesa.length
+            ? { x: Math.min(...inAttesa.map(n => n.x)), y: Math.min(...inAttesa.map(n => n.y)) }
+            : veri.length
+                ? { x: Math.min(...veri.map(n => n.x)) - STAGING.cols * STAGING.dx - 160, y: Math.min(...veri.map(n => n.y)) }
+                : { x: CENTER_POS - 400, y: CENTER_POS - 200 };
+        const i = inAttesa.length;
         const id = generateId();
-        const n = { id, x: STAGING.x + (i % STAGING.cols) * STAGING.dx, y: STAGING.y + Math.floor(i / STAGING.cols) * STAGING.dy, gender, name, birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
+        const n = { id, x: origine.x + (i % STAGING.cols) * STAGING.dx, y: origine.y + Math.floor(i / STAGING.cols) * STAGING.dy, gender, name, birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [], inAttesa: true };
         updateNodes(prev => [...prev, n as GenNode]);
         return id;
     };
@@ -1671,13 +1682,13 @@ export default function GenogramApp() {
                         Era `w-64` fissa senza breakpoint: a 390px mangiava 240px dei 390
                         e i controlli di ordinamento finivano tagliati fuori dal viewport,
                         irraggiungibili. Sotto md diventa un drawer richiamabile. */}
-                    <div className={`${showMobileSidebar ? 'flex fixed inset-y-0 left-0 z-40 shadow-2xl' : 'hidden'} md:flex md:static md:z-auto md:shadow-none w-64 shrink-0 border-r p-4 flex-col gap-4 theme-panel theme-border`}>
-                        <div className="flex items-center gap-2 font-bold text-xl mb-2" style={{ color: 'var(--theme-accent)' }}><Activity /> GenoPro</div>
-                        <button onClick={handleNewGenogram} className="text-white px-4 py-2 rounded flex items-center justify-center gap-2 font-medium transition-colors shadow-sm hover:opacity-90" style={{ backgroundColor: 'var(--theme-accent)' }}><Plus size={18} /> Nuovo</button>
+                    <div className={`${showMobileSidebar ? 'flex fixed inset-y-0 left-0 z-40 shadow-2xl' : 'hidden'} md:flex md:static md:z-auto md:shadow-none w-64 shrink-0 border-r p-4 flex-col gap-4 theme-panel theme-border gp-lato`}>
+                        <div className="gp-marchio flex items-center gap-2 font-bold text-xl mb-2" style={{ color: 'var(--theme-accent)' }}><Activity /> <span>GenoPro</span></div>
+                        <button onClick={handleNewGenogram} className="gp-nuovo text-white px-4 py-2 rounded flex items-center justify-center gap-2 font-medium transition-colors shadow-sm hover:opacity-90" style={{ backgroundColor: 'var(--theme-accent)' }}><Plus size={18} /> Nuovo</button>
 
                         <div className="space-y-1">
-                            <h3 className="text-xs font-bold uppercase opacity-50 mb-2 mt-4 px-2 theme-text">Categorie</h3>
-                            <button onClick={() => setFilterCategory('ALL')} className={`w-full flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${filterCategory === 'ALL' ? 'theme-border border bg-black/5 dark:bg-white/5 font-bold' : 'theme-hover'}`} style={filterCategory === 'ALL' ? { color: 'var(--theme-accent)' } : {}}>
+                            <h3 className="gp-eti text-xs font-bold uppercase opacity-50 mb-2 mt-4 px-2 theme-text">Categorie</h3>
+                            <button onClick={() => setFilterCategory('ALL')} className={`gp-categoria w-full flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${filterCategory === 'ALL' ? 'attiva theme-border border bg-black/5 dark:bg-white/5 font-bold' : 'theme-hover'}`} style={filterCategory === 'ALL' ? { color: 'var(--theme-accent)' } : {}}>
                                 <span className="flex items-center gap-2"><LayoutGrid size={16} /> Tutti</span>
                                 <span className="opacity-50 px-1.5 py-0.5 rounded text-[10px] border theme-border">{genograms.length}</span>
                             </button>
@@ -1686,7 +1697,7 @@ export default function GenogramApp() {
                                 const count = genograms.filter(g => g.category === cat.id).length;
                                 const isActive = filterCategory === cat.id;
                                 return (
-                                    <button key={cat.id} onClick={() => setFilterCategory(cat.id)} className={`w-full flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${isActive ? 'theme-border border bg-black/5 dark:bg-white/5 font-bold' : 'theme-hover'}`}>
+                                    <button key={cat.id} onClick={() => setFilterCategory(cat.id)} className={`gp-categoria w-full flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${isActive ? 'attiva theme-border border bg-black/5 dark:bg-white/5 font-bold' : 'theme-hover'}`}>
                                         {/* Il colore-categoria resta sull'ICONA: sull'etichetta 7 voci su 8
                                             scendevano sotto il contrasto AA (fino a 2.15:1). La semantica
                                             cromatica e' conservata, il testo torna leggibile. */}
@@ -1715,26 +1726,26 @@ export default function GenogramApp() {
                     {/* --- Main Content --- */}
                     <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: currentTheme.colors.bgMain }}>
                         {/* Top Bar Dashboard */}
-                        <div className="min-h-16 border-b flex flex-wrap items-center justify-between gap-2 px-3 md:px-8 py-2 theme-panel theme-border">
+                        <div className="gp-barra min-h-16 border-b flex flex-wrap items-center justify-between gap-2 px-3 md:px-8 py-2 theme-panel theme-border">
                             <button onClick={() => setShowMobileSidebar(true)} title="Filtri e categorie" aria-label="Filtri e categorie"
                                 className="md:hidden p-2 rounded-lg theme-hover shrink-0"><Menu size={18} className="theme-text" /></button>
                             {/* L'azione principale resta nell'header su mobile: dentro il drawer
                                 sarebbe stata a due tap e nascosta. */}
                             <button onClick={handleNewGenogram} title="Nuovo genogramma" aria-label="Nuovo genogramma"
-                                className="md:hidden text-white px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-medium shrink-0 shadow-sm"
+                                className="gp-nuovo md:hidden text-white px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-medium shrink-0 shadow-sm"
                                 style={{ backgroundColor: 'var(--theme-accent)' }}><Plus size={16} /> Nuovo</button>
                             <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-[200px] max-w-2xl">
                                 <div className="relative flex-1">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 opacity-50" size={18} />
                                     <input
-                                        className="w-full pl-10 pr-4 py-2 rounded-lg border theme-border bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 theme-text placeholder-opacity-50 placeholder-current"
+                                        className="gp-cerca w-full pl-10 pr-4 py-2 rounded-lg border theme-border bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 theme-text placeholder-opacity-50 placeholder-current"
                                         placeholder="Cerca genogramma..."
                                         value={searchTerm}
                                         onChange={e => setSearchTerm(e.target.value)}
                                     />
                                 </div>
                                 <div className="flex items-center gap-1 md:gap-2 border-l pl-2 md:pl-4 theme-border shrink-0">
-                                    <span className="hidden lg:inline text-xs uppercase font-bold opacity-70 theme-text">Ordina</span>
+                                    <span className="gp-eti hidden lg:inline text-xs uppercase font-bold opacity-70 theme-text">Ordina</span>
                                     <button onClick={() => setSortBy('date_desc')} className={`p-1.5 rounded ${sortBy === 'date_desc' ? 'bg-black/10 dark:bg-white/10 text-[var(--theme-accent)]' : 'theme-hover'}`} title="Più Recenti"><SortAsc className="rotate-180" size={18} /></button>
                                     <button onClick={() => setSortBy('date_asc')} className={`p-1.5 rounded ${sortBy === 'date_asc' ? 'bg-black/10 dark:bg-white/10 text-[var(--theme-accent)]' : 'theme-hover'}`} title="Più Vecchi"><SortAsc size={18} /></button>
                                     <button onClick={() => setSortBy('name_asc')} className={`p-1.5 rounded ${sortBy === 'name_asc' ? 'bg-black/10 dark:bg-white/10 text-[var(--theme-accent)]' : 'theme-hover'}`} title="Alfabetico"><Filter size={18} /></button>
@@ -1747,8 +1758,8 @@ export default function GenogramApp() {
 
                         {/* Grid */}
                         <div className="flex-1 overflow-y-auto p-8">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                {filteredGenograms.map(g => {
+                            <div className="gp-griglia grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                {filteredGenograms.map((g, gi) => {
                                     const catDef = categories.find(c => c.id === g.category) || categories[categories.length - 1];
                                     const Icon = ICON_MAP[catDef.iconKey] || Tag;
                                     return (
@@ -1760,11 +1771,12 @@ export default function GenogramApp() {
                                             setCustomPresets(g.data?.presets || []);
                                             resetEditorState(g.data?.nodes || [], g.data?.edges || [], g.data?.groups || [], g.data?.stickyNotes || [], g.data?.structuralMaps || []);
                                             setView('editor');
-                                        }} className="group relative theme-panel rounded-xl shadow-sm hover:shadow-md transition-all border theme-border cursor-pointer overflow-hidden flex flex-col h-48">
-                                            <div className="absolute top-0 left-0 w-1.5 h-full" style={{ backgroundColor: catDef.color }} />
+                                        }} className="gp-scheda group relative theme-panel rounded-xl shadow-sm hover:shadow-md transition-all border theme-border cursor-pointer overflow-hidden flex flex-col h-48">
+                                            <div className="gp-fascia absolute top-0 left-0 w-1.5 h-full" style={{ backgroundColor: catDef.color }} />
+                                            <span className="gp-num" aria-hidden="true">{String(gi + 1).padStart(2, '0')}</span>
                                             <div className="p-5 flex-1 flex flex-col">
                                                 <div className="flex justify-between items-start mb-2">
-                                                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider" style={{ color: catDef.color }}>
+                                                    <div className="gp-scheda-cat flex items-center gap-2 text-xs font-bold uppercase tracking-wider" style={{ color: catDef.color, ['--cat' as any]: catDef.color }}>
                                                         <Icon size={12} /> {catDef.label}
                                                     </div>
                                                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1780,9 +1792,9 @@ export default function GenogramApp() {
                                                         }} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
                                                     </div>
                                                 </div>
-                                                <h3 className="text-lg font-bold mb-1 line-clamp-2 theme-text">{g.title}</h3>
-                                                <div className="mt-auto pt-4 flex items-center justify-between text-xs opacity-60 border-t theme-border">
-                                                    <span>{new Date(g.lastModified).toLocaleDateString()}</span>
+                                                <h3 className="gp-scheda-titolo text-lg font-bold mb-1 line-clamp-2 theme-text">{g.title}</h3>
+                                                <div className="gp-scheda-piede mt-auto pt-4 flex items-center justify-between text-xs opacity-60 border-t theme-border">
+                                                    <span>{new Date(g.lastModified).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                                                     <span className="flex items-center gap-1"><Users size={12} /> {g.data?.nodes?.length || 0}</span>
                                                 </div>
                                             </div>
@@ -2252,17 +2264,18 @@ export default function GenogramApp() {
 
                                 {/* CARTIGLIO: cornice attorno alle persone in attesa di assegnazione */}
                                 {(() => {
-                                    const staged = nodes.filter(n => n.x >= stagingBounds.x1 && n.x <= stagingBounds.x2 && n.y >= stagingBounds.y1 && n.y <= stagingBounds.y2);
+                                    const staged = nodes.filter(n => n.inAttesa);
                                     if (!staged.length) return null;
-                                    const maxY = Math.max(...staged.map(n => n.y)) + NODE_HEIGHT;
-                                    const w = STAGING.cols * STAGING.dx + 30;
+                                    const x1 = Math.min(...staged.map(n => n.x)) - 45, x2 = Math.max(...staged.map(n => n.x)) + NODE_WIDTH + 45;
+                                    const y1 = Math.min(...staged.map(n => n.y)) - 72, y2 = Math.max(...staged.map(n => n.y)) + NODE_HEIGHT + 40;
+                                    const w = Math.max(x2 - x1, 260);
                                     const acc = currentTheme.colors.accent;
                                     return (
                                         <g pointerEvents="none">
-                                            <rect x={STAGING.x - 35} y={STAGING.y - 48} width={w} height={maxY - STAGING.y + 88} rx={16}
+                                            <rect x={x1} y={y1} width={w} height={y2 - y1} rx={16}
                                                 fill={acc} fillOpacity={0.05} stroke={acc} strokeOpacity={0.55} strokeWidth={1.5} strokeDasharray="8,6" />
-                                            <text x={STAGING.x - 35 + w / 2} y={STAGING.y - 26} textAnchor="middle" fontSize={12} fontWeight={700} fill={acc} letterSpacing={1}>CARTIGLIO</text>
-                                            <text x={STAGING.x - 35 + w / 2} y={STAGING.y - 12} textAnchor="middle" fontSize={9} fill={currentTheme.colors.textMuted}>trascina le persone nel genogramma per assegnarle</text>
+                                            <text className="geno-cartiglio" x={x1 + w / 2} y={y1 + 22} textAnchor="middle" fontSize={12} fontWeight={700} fill={acc} letterSpacing={1}>DA SISTEMARE</text>
+                                            <text x={x1 + w / 2} y={y1 + 38} textAnchor="middle" fontSize={9} fill={currentTheme.colors.textMuted}>persone create dalle mappe: trascinale nel genogramma</text>
                                         </g>
                                     );
                                 })()}
