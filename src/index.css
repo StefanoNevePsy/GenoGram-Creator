@@ -81,3 +81,46 @@ body {
 .tema-psydiary button, .tema-psydiary input, .tema-psydiary select, .tema-psydiary textarea { font-family: inherit; }
 .tema-psydiary .rounded { border-radius: 10px; }
 .tema-psydiary .rounded-lg, .tema-psydiary .rounded-xl { border-radius: 16px; }
+
+/* --- Temi PsyDiary: schermata iniziale, campi, pulsanti e finestre --------
+   Lo stesso linguaggio di PsyDiary: carta, inchiostro, un solo colore spot,
+   titoli in Gloock, etichette in maiuscoletto spaziato, campi a riga di
+   matita invece di riquadri, pulsante principale a pillola d'inchiostro. */
+.gp-num { display: none; }
+.tema-psydiary .gp-marchio span { font-family: 'Gloock', Georgia, serif; font-weight: 400; font-size: 1.6rem; color: var(--theme-text); letter-spacing: -0.01em; }
+.tema-psydiary .gp-eti { font-size: 11px; letter-spacing: 0.12em; opacity: 1; color: var(--theme-text-muted); font-weight: 600; }
+.tema-psydiary .gp-nuovo { background: var(--theme-text) !important; color: var(--theme-bg-main) !important; border-radius: 999px !important; box-shadow: none !important; font-weight: 650; }
+.tema-psydiary .gp-nuovo:hover { opacity: 1; filter: brightness(1.15); }
+.tema-psydiary .gp-categoria { border: 0 !important; background: transparent !important; border-radius: 0 !important; color: var(--theme-text); }
+.tema-psydiary .gp-categoria svg { color: var(--theme-text-muted) !important; stroke: currentColor !important; }
+.tema-psydiary .gp-categoria.attiva { font-weight: 650; }
+.tema-psydiary .gp-categoria.attiva > span:first-child { text-decoration: underline; text-decoration-color: var(--theme-accent); text-decoration-thickness: 2px; text-underline-offset: 6px; }
+.tema-psydiary .gp-categoria > span:last-child:not(:first-child) { border: 0 !important; opacity: 0.8; font-variant-numeric: tabular-nums; }
+.tema-psydiary .gp-cerca { border: 0 !important; border-bottom: 1.5px solid var(--theme-border) !important; border-radius: 0 !important; box-shadow: none !important; padding-left: 2.2rem; }
+.tema-psydiary .gp-cerca:focus { border-bottom-color: var(--theme-accent) !important; }
+.tema-psydiary .gp-griglia { gap: 1.5rem; }
+.tema-psydiary .gp-scheda { border-radius: 16px !important; box-shadow: none !important; transition: transform .16s cubic-bezier(.22,1,.36,1), box-shadow .16s cubic-bezier(.22,1,.36,1); }
+.tema-psydiary .gp-scheda:hover { transform: translateY(-2px); box-shadow: 0 1px 0 var(--theme-border), 0 22px 44px -30px rgba(26, 33, 49, .55) !important; }
+.tema-psydiary .gp-fascia { display: none; }
+.tema-psydiary .gp-num { display: block; position: absolute; right: 14px; top: 4px; font-family: 'Gloock', Georgia, serif; font-size: 56px; line-height: 1; color: transparent; -webkit-text-stroke: 1px var(--theme-border); pointer-events: none; }
+.tema-psydiary .gp-scheda-cat { color: var(--theme-text-muted) !important; font-size: 10.5px; letter-spacing: 0.12em; }
+.tema-psydiary .gp-scheda-cat svg { display: none; }
+.tema-psydiary .gp-scheda-cat::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--cat); opacity: .85; }
+.tema-psydiary .gp-scheda-titolo { font-family: 'Gloock', Georgia, serif; font-weight: 400; font-size: 1.6rem; line-height: 1.05; padding-right: 3.5rem; letter-spacing: -0.005em; }
+.tema-psydiary .gp-scheda-piede { border-top-style: dashed !important; opacity: .75; }
+
+/* campi a riga di matita (non le caselle di spunta) */
+.tema-psydiary input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),
+.tema-psydiary textarea, .tema-psydiary select {
+  background-color: transparent !important; border-width: 0 0 1.5px 0 !important; border-style: solid !important; border-color: var(--theme-border) !important;
+  border-radius: 0 !important; box-shadow: none !important;
+}
+.tema-psydiary input:not([type=checkbox]):not([type=radio]):focus, .tema-psydiary textarea:focus, .tema-psydiary select:focus { border-color: var(--theme-accent) !important; outline: none; }
+.tema-psydiary input[type=checkbox], .tema-psydiary input[type=radio] { accent-color: var(--theme-accent); }
+/* pulsanti principali blu del tema base → inchiostro */
+.tema-psydiary .bg-blue-600, .tema-psydiary .bg-blue-500 { background-color: var(--theme-text) !important; color: var(--theme-bg-main) !important; border-radius: 999px !important; }
+/* finestre e menu: ombra morbida, bordo a matita */
+.tema-psydiary .shadow-2xl, .tema-psydiary .shadow-xl, .tema-psydiary .shadow-lg { box-shadow: 0 1px 0 var(--theme-border), 0 26px 52px -30px rgba(26, 33, 49, .6) !important; }
+/* barra degli strumenti dell'editor: icone d'inchiostro, lo spot solo al passaggio */
+.tema-psydiary .toolbar-strip button svg { color: var(--theme-text) !important; }
+.tema-psydiary .toolbar-strip button:hover svg { color: var(--theme-accent) !important; }

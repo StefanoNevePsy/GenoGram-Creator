@@ -430,6 +430,19 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
             if (!dragRef.current || !dragRef.current.active) return;
 
             const wasMoving = dragRef.current.type === 'move' || dragRef.current.type === 'move-note' || dragRef.current.type === 'group-label' || dragRef.current.type === 'group-padding' || dragRef.current.type === 'transform-scale' || dragRef.current.type === 'transform-rotate' || dragRef.current.type === 'selection-group' || dragRef.current.type === 'edge-anchor';
+            // Una persona "in attesa" (cartiglio) trascinata altrove entra nel genogramma
+            if (dragRef.current.type === 'move') {
+                const mosse = selectedNodeIds.filter(id => {
+                    const p0 = dragRef.current?.initialNodePositions?.[id];
+                    const n = nodesRef.current.find(x => x.id === id);
+                    return n && n.inAttesa && p0 && (Math.abs(p0.x - n.x) > 20 || Math.abs(p0.y - n.y) > 20);
+                });
+                if (mosse.length) {
+                    const nuovi = nodesRef.current.map(n => mosse.includes(n.id) ? { ...n, inAttesa: undefined } : n);
+                    nodesRef.current = nuovi;
+                    setNodes(nuovi);
+                }
+            }
             if (wasMoving) {
                 // Salva storia alla fine del drag
                 pushState(nodesRef.current, edgesRef.current, groupsRef.current, stickyNotesRef.current);
