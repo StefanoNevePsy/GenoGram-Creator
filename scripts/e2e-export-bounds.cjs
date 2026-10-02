@@ -16,7 +16,7 @@ const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + ' ' + m); if (!c) fai
     await page.click('button:has-text("Nuovo"):visible'); await page.waitForTimeout(300);
 
     // Un nodo al centro
-    await page.mouse.move(700, 450); await page.keyboard.press('m'); await page.waitForTimeout(200);
+    await page.mouse.move(700, 450); await page.keyboard.press('m'); await page.waitForTimeout(200); await page.keyboard.press('Enter'); // conferma il nome (si scrive subito)
     await page.keyboard.press('Escape');
 
     // Sticky note LONTANA dal nodo

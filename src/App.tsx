@@ -20,7 +20,8 @@ import { getFirestore, collection, doc, setDoc, deleteDoc, query, onSnapshot } f
 // --- MODULI ESTRATTI (refactoring) ---
 import { BASE_REL_CONFIG, RELATION_CATEGORIES } from './config/relationships';
 import type { CategoryDef } from './config/categories';
-import { ICON_MAP, DEFAULT_CATEGORIES } from './config/categories';
+import { ICON_MAP, DEFAULT_CATEGORIES, withCategory } from './config/categories';
+import { CategoryModal } from './components/categorie';
 import { NOTE_BG_PALETTES, NOTE_TEXT_COLORS, NOTE_FONTS, PRESET_THEMES } from './config/themes';
 import { tinta, varsTema, copiaTemaInSvg, notaInTestoSvg } from './utils/tema';
 import { GRID_SIZE, SNAP_SIZE, CANVAS_SIZE, CENTER_POS, NODE_WIDTH, NODE_HEIGHT, MARRIAGE_BAR_Y } from './config/constants';
@@ -318,10 +319,16 @@ export default function GenogramApp() {
 
     // --- 3. DATI DASHBOARD (Quelli che mancavano) ---
     const [genograms, setGenograms] = useState<GenogramMeta[]>([]);
-    const [categories] = useState<CategoryDef[]>(() => {
+    const [categories, setCategories] = useState<CategoryDef[]>(() => {
         const saved = localStorage.getItem('genopro_categories');
         return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
     });
+    // categorie create da chi usa l'app: si creano, modificano, eliminano;
+    // viaggiano dentro i genogrammi (categoryDef), così su un altro dispositivo
+    // ricompaiono da sole. Quelle eliminate non tornano.
+    const [categorieTolte, setCategorieTolte] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('genopro_categorie_tolte') || '[]'); } catch { return []; } });
+    useEffect(() => { localStorage.setItem('genopro_categorie_tolte', JSON.stringify(categorieTolte)); }, [categorieTolte]);
+    const [modaleCategoria, setModaleCategoria] = useState<{ cat: CategoryDef | null, assegna?: boolean } | null>(null);
     const [filterCategory, setFilterCategory] = useState<string>('ALL');
     const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'name_asc'>('date_desc');
     const [searchTerm, setSearchTerm] = useState("");
@@ -364,6 +371,11 @@ export default function GenogramApp() {
 
     // Persistenza impostazioni locali
     useEffect(() => { localStorage.setItem('genopro_categories', JSON.stringify(categories)); }, [categories]);
+    useEffect(() => {
+        const nuove = genograms.map(g => (g as any).categoryDef as CategoryDef | undefined)
+            .filter((c): c is CategoryDef => !!c && !!c.id && !categories.some(x => x.id === c.id) && !categorieTolte.includes(c.id));
+        if (nuove.length) setCategories(prev => nuove.reduce((l, c) => l.some(x => x.id === c.id) ? l : withCategory(l, { ...c, custom: true }), prev));
+    }, [genograms]);
     useEffect(() => { localStorage.setItem('genopro_custom_user', customUser); }, [customUser]);
     useEffect(() => { localStorage.setItem('genopro_firebase_config', firebaseConfig); }, [firebaseConfig]);
 
@@ -495,7 +507,7 @@ export default function GenogramApp() {
 
 
     // 2. AUTOSAVE INTELLIGENTE (localStorage + Firebase) — vedi hooks/useAutosave
-    useAutosave({ view, currentGenId, metaTitle, metaCategory, nodes, edges, groups, stickyNotes, structuralMaps, customPresets, historyIndex, isRemoteUpdate, user, db, appId, customUser, setSyncStatus });
+    useAutosave({ categoryDef: categories.find(c => c.id === metaCategory && c.custom), view, currentGenId, metaTitle, metaCategory, nodes, edges, groups, stickyNotes, structuralMaps, customPresets, historyIndex, isRemoteUpdate, user, db, appId, customUser, setSyncStatus });
 
     useEffect(() => {
         const el = toolbarRef.current;
@@ -763,6 +775,8 @@ export default function GenogramApp() {
             setGenograms(enrichedLocalList);
         }
     }, [user, db, customUser]);
+    // senza Firebase l'elenco non si aggiorna da solo: si rilegge tornando alla dashboard
+    useEffect(() => { if (view === 'dashboard' && (!user || !db)) setGenograms(readLocalIndex().map(readFullGenogram)); }, [view]);
 
     useLayoutEffect(() => { if (view === 'editor' && containerRef.current) setTimeout(() => { if (containerRef.current) containerRef.current.scrollTo(CENTER_POS - containerRef.current.clientWidth / 2, CENTER_POS - containerRef.current.clientHeight / 2); }, 100); }, [view]);
     const handleSave = () => {
@@ -817,6 +831,17 @@ export default function GenogramApp() {
 
     const addNodeAtCenter = (gender: Gender) => {
         setLiveMessage(`Aggiunta persona ${gender === 'M' ? 'maschio' : gender === 'F' ? 'femmina' : ''} al centro del canvas`); const n = { id: generateId(), x: CENTER_POS, y: CENTER_POS, gender, name: 'Nuovo', birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] }; updateNodes(prev => [...prev, n]); setSelectedNodeIds([n.id]); };
+
+    // Persona creata da tastiera (M/F, S/C/P): il suo nome si scrive subito
+    const [daNominare, setDaNominare] = useState<string | null>(null);
+    const nominaDopoRef = useRef(false);
+    // vale solo per la creazione appena chiesta: se non nasce nessuno, si dimentica
+    const nominaProssima = () => { nominaDopoRef.current = true; setTimeout(() => { nominaDopoRef.current = false; }, 400); };
+    useEffect(() => {
+        if (!nominaDopoRef.current || !selectedNodeIds.length) return;
+        nominaDopoRef.current = false;
+        setDaNominare(selectedNodeIds[0]);
+    }, [selectedNodeIds]);
 
     const addNodeAtPos = (gender: Gender, x: number, y: number) => {
         // Snap to grid se attivo
@@ -1736,6 +1761,22 @@ export default function GenogramApp() {
         <>
             {psyScelta && psyRichiesta && <ScegliPerPsyDiary genograms={genograms} avviso={psyRichiesta.modo === 'aggiorna' ? psyAvviso : undefined} onScegli={mandaAPsyDiary} onAnnulla={annullaPsy} />}
             {psyAvviso && !psyScelta && <AvvisoPonte testo={psyAvviso} onChiudi={() => setPsyAvviso('')} />}
+            {modaleCategoria && <CategoryModal category={modaleCategoria.cat}
+                onClose={() => setModaleCategoria(null)}
+                onSave={(c) => {
+                    setCategories(prev => withCategory(prev, c));
+                    setCategorieTolte(prev => prev.filter(x => x !== c.id));
+                    if (modaleCategoria.assegna) setMetaCategory(c.id);
+                    setModaleCategoria(null);
+                }}
+                onDelete={(c) => {
+                    const n = genograms.filter(g => g.category === c.id).length;
+                    if (!confirm(`Eliminare la categoria «${c.label}»?${n ? ` I suoi ${n} genogrammi finiscono in «Altro» (restano dove sono).` : ''}`)) return;
+                    setCategories(prev => prev.filter(x => x.id !== c.id));
+                    setCategorieTolte(prev => [...prev, c.id]);
+                    if (filterCategory === c.id) setFilterCategory('ALL');
+                    setModaleCategoria(null);
+                }} />}
         </>
     );
 
@@ -1775,7 +1816,7 @@ export default function GenogramApp() {
 
     // --- INTERAZIONI CANVAS + SHORTCUT (Fase 5) — vedi hooks/ ---
     const { getEventCoords, handleSelectionDrag, handleCanvasDown, handleNoteDown, handleNodeDown, handleEdgeClick, handleGroupDown, handleHandleDown, handleTransformStart, handleEdgeAction } = useCanvasInteraction({ containerRef, contextMenu, cursorRef, dragRef, edges, edgesRef, editingGroupId, getGraphCoordinates, groupsRef, isPanMode, isZoomingRef, longPressTimerRef, nodes, nodesRef, pushState, selectedNodeIds, selectedNoteIds, selectionMode, setContextMenu, setDragState, setEdges, setEditingGroupId, setGroups, setNodes, setQuickMenu, setSelectedEdgeIds, setSelectedGroupIds, setSelectedNodeIds, setSelectedNoteIds, setStickyNotes, snapToGrid, stickyNotes, stickyNotesRef, updateAll, updateGroups });
-    useKeyboardShortcuts({ addChildToSelection, addNodeAtPos, addParentsToSelection, addSpouseToSelection, addStickyNoteAtCursor, alignNodes, duplicateSelectedNodes, edgesRef, fitView, getCursorGraphPos, groupsRef, handleRedo, handleSave, handleUndo, history, historyIndex, nodesRef, selectedEdgeIds, selectedGroupIds, selectedNodeIds, selectedNoteIds, setIsPanMode, setQuickMenu, setSelectedEdgeIds, setSelectedGroupIds, setSelectedNodeIds, setSelectedNoteIds, setSnapToGrid, stickyNotesRef, updateAll, updateNodes, zoom });
+    useKeyboardShortcuts({ nominaProssima, addChildToSelection, addNodeAtPos, addParentsToSelection, addSpouseToSelection, addStickyNoteAtCursor, alignNodes, duplicateSelectedNodes, edgesRef, fitView, getCursorGraphPos, groupsRef, handleRedo, handleSave, handleUndo, history, historyIndex, nodesRef, selectedEdgeIds, selectedGroupIds, selectedNodeIds, selectedNoteIds, setIsPanMode, setQuickMenu, setSelectedEdgeIds, setSelectedGroupIds, setSelectedNodeIds, setSelectedNoteIds, setSnapToGrid, stickyNotesRef, updateAll, updateNodes, zoom });
 
     if (view === 'dashboard') {
         return (
@@ -1832,17 +1873,26 @@ export default function GenogramApp() {
                                 const count = genograms.filter(g => g.category === cat.id).length;
                                 const isActive = filterCategory === cat.id;
                                 return (
-                                    <button key={cat.id} onClick={() => setFilterCategory(cat.id)} className={`gp-categoria w-full flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${isActive ? 'attiva theme-border border bg-black/5 dark:bg-white/5 font-bold' : 'theme-hover'}`}>
+                                    <button key={cat.id} onClick={() => setFilterCategory(cat.id)} className={`gp-categoria group w-full flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${isActive ? 'attiva theme-border border bg-black/5 dark:bg-white/5 font-bold' : 'theme-hover'}`}>
                                         {/* Il colore-categoria resta sull'ICONA: sull'etichetta 7 voci su 8
                                             scendevano sotto il contrasto AA (fino a 2.15:1). La semantica
                                             cromatica e' conservata, il testo torna leggibile. */}
                                         <span className="flex items-center gap-2 theme-text">
                                             <Icon size={16} color={cat.color} /> {cat.label}
                                         </span>
-                                        {count > 0 && <span className="opacity-70 px-1.5 py-0.5 rounded text-[10px] border theme-border">{count}</span>}
+                                        <span className="flex items-center gap-1">
+                                            {cat.custom && <span role="button" tabIndex={0} aria-label={'Modifica la categoria ' + cat.label} title="Modifica la categoria"
+                                                onClick={(e) => { e.stopPropagation(); setModaleCategoria({ cat }); }}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setModaleCategoria({ cat }); } }}
+                                                className="opacity-0 group-hover:opacity-60 hover:!opacity-100 focus:opacity-100 p-0.5 rounded"><Edit3 size={12} /></span>}
+                                            {count > 0 && <span className="opacity-70 px-1.5 py-0.5 rounded text-[10px] border theme-border">{count}</span>}
+                                        </span>
                                     </button>
                                 );
                             })}
+                            <button onClick={() => setModaleCategoria({ cat: null })} className="gp-categoria w-full flex items-center gap-2 px-3 py-2 rounded text-sm theme-hover theme-text-muted">
+                                <Plus size={16} /> Nuova categoria
+                            </button>
                         </div>
 
                         <div className="mt-auto border-t theme-border pt-4 space-y-2">
@@ -2031,7 +2081,7 @@ export default function GenogramApp() {
                         <input value={metaTitle} onChange={e => setMetaTitle(e.target.value)} className="bg-transparent font-bold text-sm w-24 md:w-40 outline-none theme-text truncate" placeholder="Titolo" />
                         <div className="relative">
                             <button onClick={() => setShowCategoryMenu(!showCategoryMenu)} className="flex items-center gap-1 text-[10px] uppercase font-bold theme-text-muted hover:text-[var(--theme-accent)]">
-                                {categories.find(c => c.id === metaCategory)?.label} <ChevronDown size={10} />
+                                {categories.find(c => c.id === metaCategory)?.label || 'Altro'} <ChevronDown size={10} />
                             </button>
                             {showCategoryMenu && (
                                 <div className="absolute top-full left-0 mt-1 shadow-lg rounded-lg p-1 w-40 z-50 theme-panel border theme-border">
@@ -2040,6 +2090,9 @@ export default function GenogramApp() {
                                             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} /> {c.label}
                                         </button>
                                     ))}
+                                    <button onClick={() => { setShowCategoryMenu(false); setModaleCategoria({ cat: null, assegna: true }); }} className="w-full text-left px-2 py-1.5 text-xs rounded theme-hover flex items-center gap-2 border-t theme-border mt-1 pt-2">
+                                        <Plus size={10} /> Nuova categoria…
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -2462,7 +2515,7 @@ export default function GenogramApp() {
                                                 />
                                             )}
 
-                                            <NodeShape node={n} isSelected={selectedNodeIds.includes(n.id)} showLabelType={showLabels} darkMode={darkMode} onHandleDown={handleHandleDown} selectionMode={selectionMode} onRename={(id: string, name: string) => updateNodes(prev => prev.map(no => no.id === id ? { ...no, name } : no))} />
+                                            <NodeShape node={n} isSelected={selectedNodeIds.includes(n.id)} showLabelType={showLabels} darkMode={darkMode} onHandleDown={handleHandleDown} selectionMode={selectionMode} onRename={(id: string, name: string) => updateNodes(prev => prev.map(no => no.id === id ? { ...no, name } : no))} autoEdit={daNominare === n.id} onAutoEdit={() => setDaNominare(null)} />
                                         </g>
                                     );
                                 })}

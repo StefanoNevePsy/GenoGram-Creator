@@ -639,10 +639,19 @@ export const PersonSymbol = ({ node, darkMode, isSelected = false }: { node: Gen
     return <g>{Shape}<Issues />{IndexMark}{DeceasedMark}{InstitutionMark}{ImmigrationMark}{DonorMark}</g>;
 };
 
-export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, selectionMode, onRename }: any) => {
+export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, selectionMode, onRename, autoEdit = false, onAutoEdit }: any) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(node.name);
     const inputRef = useRef<HTMLInputElement>(null);
+
+    // Appena creato da tastiera: il nome è già in modifica e selezionato,
+    // basta scrivere (Invio conferma, Esc lascia il nome provvisorio)
+    useEffect(() => {
+        if (!autoEdit) return;
+        setEditName(node.name);
+        setIsEditing(true);
+        onAutoEdit?.();
+    }, [autoEdit]);
 
     useEffect(() => {
         if (isEditing && inputRef.current) {

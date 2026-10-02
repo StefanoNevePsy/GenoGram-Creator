@@ -46,7 +46,7 @@ const ratio = (a,b) => { const l1=lum(a), l2=lum(b); return (Math.max(l1,l2)+.05
   await page.goto('http://localhost:5199/', { waitUntil: 'networkidle' });
   await page.click('button:has-text("Nuovo"):visible'); await page.waitForTimeout(500);
   for (const [k, xy] of [['m',[500,400]], ['f',[700,400]], ['m',[900,400]]]) {
-    await page.mouse.move(xy[0], xy[1]); await page.keyboard.press(k); await page.waitForTimeout(250);
+    await page.mouse.move(xy[0], xy[1]); await page.keyboard.press(k); await page.waitForTimeout(250); await page.keyboard.press('Enter'); // conferma il nome (si scrive subito)
   }
   const n = await page.locator('svg g.cursor-pointer rect[width="40"], svg g.cursor-pointer circle[r="20"]').count();
   ok(n === 3, `M/F ripetibili senza Escape: 3 persone create (${n})`);

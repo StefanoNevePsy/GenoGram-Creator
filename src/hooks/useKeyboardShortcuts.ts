@@ -15,6 +15,7 @@ interface KeyboardDeps {
     addSpouseToSelection: any;
     addStickyNoteAtCursor: any;
     alignNodes: any;
+    nominaProssima?: () => void;
     duplicateSelectedNodes: any;
     edgesRef: { current: RelationEdge[] };
     fitView: any;
@@ -44,7 +45,7 @@ interface KeyboardDeps {
 }
 
 export const useKeyboardShortcuts = (d: KeyboardDeps) => {
-    const { addChildToSelection, addNodeAtPos, addParentsToSelection, addSpouseToSelection, addStickyNoteAtCursor, alignNodes, duplicateSelectedNodes, edgesRef, fitView, getCursorGraphPos, groupsRef, handleRedo, handleSave, handleUndo, history, historyIndex, nodesRef, selectedEdgeIds, selectedGroupIds, selectedNodeIds, selectedNoteIds, setIsPanMode, setQuickMenu, setSelectedEdgeIds, setSelectedGroupIds, setSelectedNodeIds, setSelectedNoteIds, setSnapToGrid, stickyNotesRef, updateAll, updateNodes, zoom } = d;
+    const { nominaProssima = () => {}, addChildToSelection, addNodeAtPos, addParentsToSelection, addSpouseToSelection, addStickyNoteAtCursor, alignNodes, duplicateSelectedNodes, edgesRef, fitView, getCursorGraphPos, groupsRef, handleRedo, handleSave, handleUndo, history, historyIndex, nodesRef, selectedEdgeIds, selectedGroupIds, selectedNodeIds, selectedNoteIds, setIsPanMode, setQuickMenu, setSelectedEdgeIds, setSelectedGroupIds, setSelectedNodeIds, setSelectedNoteIds, setSnapToGrid, stickyNotesRef, updateAll, updateNodes, zoom } = d;
     // --- SHORTCUTS AGGIORNATE (Spawn, Allineamenti, Select All) ---
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -113,6 +114,7 @@ export const useKeyboardShortcuts = (d: KeyboardDeps) => {
             // M/F non facevano più nulla, in silenzio.
             if ((e.key.toLowerCase() === 'm' || e.key.toLowerCase() === 'f') && !e.altKey && !e.ctrlKey) {
                 const { x, y } = getCursorGraphPos(); // <--- Usa la nuova funzione helper
+                nominaProssima();
                 addNodeAtPos(e.key.toLowerCase() === 'm' ? 'M' : 'F', x, y);
             }
 
@@ -130,9 +132,9 @@ export const useKeyboardShortcuts = (d: KeyboardDeps) => {
             if (selectedNodeIds.length === 1 && !e.altKey && !e.ctrlKey) {
                 const srcId = selectedNodeIds[0];
                 if (nodesRef.current.find(n => n.id === srcId)) {
-                    if (e.key.toLowerCase() === 's') { addSpouseToSelection(); }
-                    if (e.key.toLowerCase() === 'c') { addChildToSelection(); }
-                    if (e.key.toLowerCase() === 'p') { addParentsToSelection(); }
+                    if (e.key.toLowerCase() === 's') { nominaProssima(); addSpouseToSelection(); }
+                    if (e.key.toLowerCase() === 'c') { nominaProssima(); addChildToSelection(); }
+                    if (e.key.toLowerCase() === 'p') { nominaProssima(); addParentsToSelection(); }
                 }
             }
 

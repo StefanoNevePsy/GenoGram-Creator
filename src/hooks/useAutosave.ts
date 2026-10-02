@@ -16,6 +16,7 @@ interface AutosaveDeps {
     currentGenId: string | null;
     metaTitle: string;
     metaCategory: string;
+    categoryDef?: unknown;      // la categoria creata da chi usa l'app, se è una di quelle
     nodes: GenNode[]; edges: RelationEdge[]; groups: NodeGroup[];
     stickyNotes: StickyNoteData[]; structuralMaps: StructuralMap[]; customPresets: CustomPreset[];
     historyIndex: number;
@@ -25,7 +26,7 @@ interface AutosaveDeps {
 }
 
 export const useAutosave = ({
-    view, currentGenId, metaTitle, metaCategory, nodes, edges, groups, stickyNotes, structuralMaps,
+    categoryDef, view, currentGenId, metaTitle, metaCategory, nodes, edges, groups, stickyNotes, structuralMaps,
     customPresets, historyIndex, isRemoteUpdate, user, db, appId, customUser, setSyncStatus
 }: AutosaveDeps) => {
     useEffect(() => {
@@ -45,6 +46,7 @@ export const useAutosave = ({
                 id: currentGenId,
                 title: metaTitle,
                 category: metaCategory,
+                ...(categoryDef ? { categoryDef } : {}),
                 lastModified: Date.now(),
                 data: { nodes, edges, groups, presets: customPresets, stickyNotes, structuralMaps }
             };
