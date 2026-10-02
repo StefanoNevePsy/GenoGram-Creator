@@ -137,6 +137,58 @@ const copiaTemaInSvg = (clone: SVGSVGElement, origine: Element | null) => {
     GENO_VARS.forEach(n => { const v = cs.getPropertyValue(n).trim(); if (v) clone.style.setProperty(n, v); });
 };
 
+// Le note adesive sono HTML dentro l'SVG (foreignObject): il browser non
+// permette di trasformare in PNG/JPEG un'immagine che ne contiene ("tainted
+// canvas") e il download falliva. Per le immagini, nella sola copia esportata,
+// ogni foreignObject diventa testo SVG con lo stesso carattere, colore,
+// allineamento e ritorni a capo.
+const notaInTestoSvg = (clone: SVGSVGElement) => {
+    const NS = 'http://www.w3.org/2000/svg';
+    clone.querySelectorAll('foreignObject').forEach(fo => {
+        const x = parseFloat(fo.getAttribute('x') || '0'), y = parseFloat(fo.getAttribute('y') || '0');
+        const w = parseFloat(fo.getAttribute('width') || '0'), h = parseFloat(fo.getAttribute('height') || '0');
+        const div = fo.querySelector('div') as HTMLElement | null;
+        const st = div ? div.style : null;
+        const testo = (fo.textContent || '').replace(/\r/g, '');
+        const dim = parseFloat((st && st.fontSize) || '13') || 13;
+        const centrato = !!st && st.textAlign === 'center';
+        const riga = dim * 1.3;
+        // a capo come nel riquadro: sulle parole, con una stima della larghezza dei caratteri
+        const perRiga = Math.max(4, Math.floor(w / (dim * 0.55)));
+        const righe: string[] = [];
+        testo.split('\n').forEach(par => {
+            let cur = '';
+            par.split(/\s+/).forEach(par2 => {
+                let parola = par2;
+                while (parola.length > perRiga) { if (cur) { righe.push(cur); cur = ''; } righe.push(parola.slice(0, perRiga)); parola = parola.slice(perRiga); }
+                const prova = cur ? cur + ' ' + parola : parola;
+                if (prova.length > perRiga) { righe.push(cur); cur = parola; } else cur = prova;
+            });
+            righe.push(cur);
+        });
+        const max = Math.max(1, Math.floor(h / riga));
+        const visibili = righe.slice(0, max);
+        const t = document.createElementNS(NS, 'text');
+        const altezza = visibili.length * riga;
+        const y0 = centrato ? y + (h - altezza) / 2 + dim : y + dim;
+        t.setAttribute('x', String(centrato ? x + w / 2 : x));
+        t.setAttribute('y', String(y0));
+        if (centrato) t.setAttribute('text-anchor', 'middle');
+        t.setAttribute('font-size', String(dim));
+        t.setAttribute('font-family', (st && st.fontFamily) || 'sans-serif');
+        t.setAttribute('fill', (st && st.color) || '#000');
+        if (st && st.opacity) t.setAttribute('opacity', st.opacity);
+        visibili.forEach((r, i) => {
+            const ts = document.createElementNS(NS, 'tspan');
+            ts.setAttribute('x', String(centrato ? x + w / 2 : x));
+            if (i > 0) ts.setAttribute('dy', String(riga));
+            ts.textContent = r || ' ';
+            t.appendChild(ts);
+        });
+        fo.replaceWith(t);
+    });
+};
+
 const RELATION_CATEGORIES: Record<string, string[]> = {
     "Struttura / Coppia": [
         'marriage', 'secret', 'cohabitation', 'couple', 'divorce-commit',
@@ -4290,8 +4342,13 @@ export default function GenogramApp() {
                 maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
             }
         });
+        // anche le note adesive, che altrimenti restavano tagliate nelle esportazioni
+        stickyNotes.forEach(sn => {
+            minX = Math.min(minX, sn.x); minY = Math.min(minY, sn.y);
+            maxX = Math.max(maxX, sn.x + (sn.width || 0) + 4); maxY = Math.max(maxY, sn.y + (sn.height || 0) + 4);
+        });
         return { minX, minY, maxX, maxY };
-    }, [nodes, groups]);
+    }, [nodes, groups, stickyNotes]);
 
     const getGraphBounds = () => {
         let { minX, minY, maxX, maxY } = getContentBounds();
@@ -4337,7 +4394,7 @@ export default function GenogramApp() {
         svgClone.setAttribute('height', `${bounds.h * scaleFactor}`);
         svgClone.style.fontFamily = 'sans-serif';
 
-        const svgData = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
+        const svgData = (copiaTemaInSvg(svgClone, svgRef.current), notaInTestoSvg(svgClone), new XMLSerializer().serializeToString(svgClone));
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         const img = new Image();
