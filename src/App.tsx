@@ -51,6 +51,7 @@ export default function GenogramApp() {
     const groupRef = useRef<SVGGElement>(null); // <--- Fondamentale per le coordinate
     const containerRef = useRef<HTMLDivElement>(null);
     const cursorRef = useRef({ clientX: 0, clientY: 0 }); // Posizione mouse grezza
+    const pennaVistaRef = useRef(0); // ultimo istante in cui la penna era vicina allo schermo
     const isZoomingRef = useRef(false); // <--- NUOVO REF
     const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
@@ -167,8 +168,13 @@ export default function GenogramApp() {
             if (dragRef.current) dragRef.current = { ...dragRef.current, active: false };
             setDragState(null);
 
-            // Usa l'ultima posizione nota del puntatore (aggiornata via pointermove)
-            const { clientX, clientY } = cursorRef.current;
+            // Il menu "Aggiungi" esiste solo nell'editor
+            if (latestStateRef.current.view !== 'editor') return;
+
+            // Posizione della penna mandata da Java (pixel CSS); se il tasto è
+            // arrivato senza posizione, l'ultima nota (aggiornata via pointermove)
+            const daJava = typeof e.x === 'number' && typeof e.y === 'number' && Number.isFinite(e.x) && Number.isFinite(e.y);
+            const { clientX, clientY } = daJava ? { clientX: e.x, clientY: e.y } : cursorRef.current;
             const { x, y } = getGraphCoordinates(clientX, clientY);
 
             setContextMenu({ x: clientX, y: clientY, gx: x, gy: y });
@@ -188,9 +194,28 @@ export default function GenogramApp() {
     useEffect(() => {
         const handleGlobalMouseMove = (e: PointerEvent) => {
             cursorRef.current = { clientX: e.clientX, clientY: e.clientY };
+            if (e.pointerType === 'pen') pennaVistaRef.current = Date.now();
+        };
+        // Rifiuto del palmo: mentre si usa la penna (anche sospesa sopra lo
+        // schermo) i tocchi del dito sul disegno non spostano né zoomano la vista.
+        const vicinoPenna = () => Date.now() - pennaVistaRef.current < 700;
+        const sulDisegno = (t: EventTarget | null) => !!(t instanceof Element && svgRef.current?.contains(t));
+        const pennaGiu = (e: PointerEvent) => {
+            if (e.pointerType === 'pen') pennaVistaRef.current = Date.now();
+            else if (e.pointerType === 'touch' && vicinoPenna() && sulDisegno(e.target)) { e.stopPropagation(); e.preventDefault(); }
+        };
+        const ditoGiu = (e: TouchEvent) => {
+            const dita = Array.from(e.changedTouches).every(t => (t as Touch & { touchType?: string }).touchType !== 'stylus');
+            if (dita && vicinoPenna() && sulDisegno(e.target)) e.stopPropagation();
         };
         window.addEventListener('pointermove', handleGlobalMouseMove);
-        return () => window.removeEventListener('pointermove', handleGlobalMouseMove);
+        window.addEventListener('pointerdown', pennaGiu, true);
+        window.addEventListener('touchstart', ditoGiu, true);
+        return () => {
+            window.removeEventListener('pointermove', handleGlobalMouseMove);
+            window.removeEventListener('pointerdown', pennaGiu, true);
+            window.removeEventListener('touchstart', ditoGiu, true);
+        };
     }, []);
 
     // 2. Funzione Helper per calcolare la posizione nel grafico
@@ -437,8 +462,10 @@ export default function GenogramApp() {
             try {
                 capHandle = await CapacitorApp.addListener('backButton', async () => {
                     const handled = await goBack();
+                    // Dalla schermata iniziale l'app va in secondo piano (come le
+                    // app di sistema) invece di chiudersi: riaprendola si ritrova tutto
                     if (!handled) {
-                        CapacitorApp.exitApp();
+                        CapacitorApp.minimizeApp().catch(() => CapacitorApp.exitApp());
                     }
                 });
             } catch (err) {

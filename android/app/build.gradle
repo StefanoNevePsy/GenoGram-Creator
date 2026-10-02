@@ -7,8 +7,10 @@ android {
         applicationId "com.genogrambuilder.stefanoneve"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Il workflow Android passa il numero della build: ogni APK è più nuovo
+        // del precedente e si installa sopra conservando i dati.
+        versionCode((project.findProperty('codiceVersione') ?: '1') as Integer)
+        versionName "1.0.${project.findProperty('codiceVersione') ?: '0'}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +18,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Firma fissa per gli APK del workflow (variabili GENO_*): stessa firma a
+    // ogni build, quindi l'aggiornamento si installa sopra l'app esistente.
+    def chiave = System.getenv('GENO_KEYSTORE')
+    signingConfigs {
+        if (chiave) {
+            fissa {
+                storeFile file(chiave)
+                storePassword System.getenv('GENO_KEYSTORE_PASSWORD') ?: 'android'
+                keyAlias System.getenv('GENO_KEY_ALIAS') ?: 'androiddebugkey'
+                keyPassword System.getenv('GENO_KEY_PASSWORD') ?: (System.getenv('GENO_KEYSTORE_PASSWORD') ?: 'android')
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (chiave) signingConfig signingConfigs.fissa
         }
     }
 }
