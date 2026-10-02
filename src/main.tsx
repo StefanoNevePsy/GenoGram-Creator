@@ -1,6 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.tsx' // Assicurati che il file GenogrammaDigitale sia rinominato in App.tsx
+// Caratteri del tema PsyDiary (inclusi nell'app: funzionano anche offline)
+import '@fontsource/gloock/400.css'
+import '@fontsource-variable/archivo/wdth.css'
+import '@fontsource/la-belle-aurore/400.css'
 import './index.css'
 
 // Error Boundary: Cattura errori che bloccano l'intera app (es. pagina bianca)
