@@ -1,0 +1,145 @@
+name: Build Android (APK)
+
+# Costruisce l'APK di GenoGram Creator a ogni modifica di main (e su richiesta
+# dal pulsante "Run workflow") e lo pubblica nella pre-release "android-latest":
+# dal tablet basta aprire la pagina della release e scaricare
+# genogram-creator.apk. Ogni APK è firmato con la stessa chiave e ha un numero
+# di versione più alto del precedente, quindi si installa sopra l'app già
+# presente conservando i genogrammi salvati sul dispositivo.
+# Nelle pull request l'APK viene solo costruito e allegato all'esecuzione.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'electron/**'
+      - 'electron-builder.yml'
+      - '.github/workflows/build-desktop.yml'
+      - '.github/workflows/deploy-gh-pages.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package*.json'
+      - 'capacitor.config.ts'
+      - 'vite.config.ts'
+      - 'scripts/icone-android.mjs'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      PUBBLICA: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Capacitor 8 compila in Java 21
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+
+      - run: npm ci
+
+      - name: Controlli (tipi e test)
+        run: |
+          npx tsc -p tsconfig.app.json --noEmit
+          npm test
+
+      # base '/' (non quella di GitHub Pages): l'app Android serve i file da sé
+      - name: Build web
+        run: npx vite build
+
+      # Icona adattiva, livello monocromo per le icone a tema (Material You /
+      # Monet), bitmap classiche e splash, tutte dalla stessa sagoma.
+      - name: Icone Android
+        run: node scripts/icone-android.mjs
+
+      - name: Copia l'app e i plugin nel progetto Android
+        run: npx cap sync android
+
+      # Firma: se c'è il secret ANDROID_KEYSTORE_B64 (keystore in base64) si usa
+      # quello, altrimenti la chiave fissa del repository (android/ci).
+      # Facoltativi: ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
+      - name: Chiave di firma
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KS_KEYPASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          KS="$RUNNER_TEMP/genogram.keystore"
+          if [ -n "$KS_B64" ]; then
+            printf '%s' "$KS_B64" | tr -d '[:space:]' | base64 -d > "$KS"
+            echo "Firma: keystore dal secret ANDROID_KEYSTORE_B64"
+          else
+            cp android/ci/debug.keystore "$KS"
+            echo "::notice::Firma con la chiave del repository (android/ci/debug.keystore). Per una chiave privata imposta il secret ANDROID_KEYSTORE_B64."
+          fi
+          PASS="${KS_PASS:-android}"; ALIAS="${KS_ALIAS:-androiddebugkey}"
+          if ! keytool -list -keystore "$KS" -storepass "$PASS" -alias "$ALIAS" > /dev/null 2>&1; then
+            echo "::error::Il keystore non si apre con password e alias indicati: controlla i secret ANDROID_*."
+            exit 1
+          fi
+          keytool -list -v -keystore "$KS" -storepass "$PASS" -alias "$ALIAS" 2>/dev/null | grep -m1 "SHA256:"
+          {
+            echo "GENO_KEYSTORE=$KS"
+            echo "GENO_KEYSTORE_PASSWORD=$PASS"
+            echo "GENO_KEY_ALIAS=$ALIAS"
+            echo "GENO_KEY_PASSWORD=${KS_KEYPASS:-$PASS}"
+          } >> "$GITHUB_ENV"
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon -PcodiceVersione=${{ github.run_number }}
+
+      - name: Nomi dell'APK
+        run: |
+          mkdir -p out
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          test -f "$APK"
+          cp "$APK" out/genogram-creator.apk
+          cp "$APK" "out/genogram-creator-1.0.${{ github.run_number }}-$(git rev-parse --short HEAD).apk"
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: genogram-creator-apk
+          path: out/*.apk
+
+      - name: Pubblica nella release android-latest
+        if: env.PUBBLICA == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          target_commitish: ${{ github.sha }}
+          name: GenoGram Creator per Android (ultima build)
+          prerelease: true
+          files: out/genogram-creator.apk
+          fail_on_unmatched_files: true
+          body: |
+            APK aggiornato automaticamente a ogni modifica.
+
+            - Versione: 1.0.${{ github.run_number }} · commit `${{ github.sha }}`
+
+            **Scarica `genogram-creator.apk`** qui sotto e aprilo sul tablet: si
+            installa sopra la versione precedente conservando i genogrammi.
