@@ -7,7 +7,7 @@ import {
     AlignJustify, CircleDashed, FileText, Search, RotateCcw, RotateCw,
     Filter, SortAsc, Tag, HelpCircle,
     Target, Grid3X3, TrendingUp, Image as ImageIcon, FileImage, Check, Info,
-    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy, Baby, Shapes, Boxes, Menu // <--- Network aggiunto qui
+    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy, Baby, Shapes, Boxes, Menu, Send // <--- Network aggiunto qui
 } from 'lucide-react';
 import { StatusBar } from '@capacitor/status-bar';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -40,7 +40,9 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useCanvasInteraction } from './hooks/useCanvasInteraction';
 import { MinuchinManager, MinuchinOverlay, mapToSvgString } from './components/minuchin';
 import { PeopleListPanel, describePerson } from './components/peopleList';
-import { readLocalIndex, readFullGenogram, removeLocalGenogram, persistImportedLocally, downloadJsonFile } from './services/storage';
+import { readLocalIndex, readFullGenogram, removeLocalGenogram, persistImportedLocally, downloadJsonFile, saveDraftAndIndex } from './services/storage';
+import { pontePossibile, inviaAPsyDiary, richiestaDaPsyDiary, rispondi, rinuncia, riceviDaPsyDiary, type RichiestaPsyDiary } from './services/psydiary';
+import { ScegliPerPsyDiary, AvvisoPonte } from './components/ponte';
 
 
 
@@ -1632,6 +1634,111 @@ export default function GenogramApp() {
         return imported.length;
     };
 
+    const apriNellEditor = (g: GenogramMeta) => {
+        setShowMobileSidebar(false);
+        setCurrentGenId(g.id);
+        setMetaTitle(g.title);
+        setMetaCategory(g.category);
+        setCustomPresets(g.data?.presets || []);
+        resetEditorState(g.data?.nodes || [], g.data?.edges || [], g.data?.groups || [], g.data?.stickyNotes || [], g.data?.structuralMaps || []);
+        setView('editor');
+    };
+
+    // --- PONTE CON PSYDIARY (services/psydiary.ts) ---
+    // Invia: apre PsyDiary, che chiede a quale anagrafica allegarlo.
+    // Richieste da PsyDiary (#psydiary?…): scegliere un genogramma da mandare,
+    // mandare quello collegato ("aggiorna"), o aprirne uno da modificare.
+    const [psyRichiesta, setPsyRichiesta] = useState<RichiestaPsyDiary | null>(null);
+    const [psyScelta, setPsyScelta] = useState(false);
+    const [psyAvviso, setPsyAvviso] = useState('');
+    const psyMandato = useRef(false);
+    const inviaPsy = async (g: GenogramMeta) => {
+        setPsyAvviso(`Apro PsyDiary: scegli lì a quale anagrafica allegare «${g.title}».`);
+        const esito = await inviaAPsyDiary(g);
+        setPsyAvviso({
+            ricevuto: `«${g.title}» è in PsyDiary.`,
+            annullato: 'Invio annullato in PsyDiary.',
+            chiuso: 'PsyDiary si è chiuso prima di ricevere il genogramma.',
+            bloccato: 'Il browser ha bloccato la finestra di PsyDiary: consenti i popup per questo sito.',
+        }[esito]);
+    };
+    const genogrammaCorrente = (): GenogramMeta => ({
+        id: currentGenId, title: metaTitle, category: metaCategory, lastModified: Date.now(),
+        data: { nodes, edges, groups, presets: customPresets, stickyNotes, structuralMaps },
+    } as GenogramMeta);
+    const mandaAPsyDiary = (meta: GenogramMeta) => {
+        const r = psyRichiesta;
+        if (!r || psyMandato.current) return;
+        psyMandato.current = true;
+        const full = readFullGenogram(meta);
+        setPsyScelta(false); setPsyRichiesta(null);
+        setPsyAvviso(`Mando «${full.title}» a PsyDiary…`);
+        rispondi(r, full).then(ok => {
+            setPsyAvviso(ok ? `«${full.title}» è arrivato in PsyDiary.` : 'PsyDiary non ha confermato: controlla lì se è arrivato.');
+            if (ok) setTimeout(() => window.close(), 1200);
+        });
+    };
+    const annullaPsy = () => {
+        if (psyRichiesta) rinuncia(psyRichiesta);
+        setPsyScelta(false); setPsyRichiesta(null);
+        setTimeout(() => window.close(), 300);
+    };
+    const apriDaPsyDiary = async (g: GenogramMeta) => {
+        const qui = readLocalIndex().find(x => x.id === g.id);
+        if (qui && (qui.lastModified || 0) > (g.lastModified || 0) &&
+            !confirm(`Su questo dispositivo «${qui.title}» è più recente della copia in PsyDiary.\n\nOK: apri la copia di PsyDiary (sostituisce quella del dispositivo).\nAnnulla: apri quella del dispositivo.`)) {
+            apriNellEditor(readFullGenogram(qui));
+            setPsyAvviso('Aperta la versione del dispositivo. Quando hai finito usa «Invia a PsyDiary».');
+            return;
+        }
+        saveDraftAndIndex({ id: g.id, title: g.title, category: g.category, lastModified: g.lastModified }, JSON.stringify(g));
+        if (user && db) {
+            const pathPart = customUser ? customUser : user.uid;
+            if (pathPart) { try { await setDoc(doc(db, 'artifacts', appId, 'users', pathPart, 'genograms', g.id), JSON.parse(JSON.stringify(g)), { merge: true }); } catch { /* offline */ } }
+        }
+        setGenograms(prev => [...prev.filter(x => x.id !== g.id), g]);
+        apriNellEditor(g);
+        setPsyAvviso(`«${g.title}» arriva da PsyDiary. Quando hai finito usa «Invia a PsyDiary».`);
+    };
+    const apriDaPsyRef = useRef(apriDaPsyDiary);
+    apriDaPsyRef.current = apriDaPsyDiary;
+    useEffect(() => {
+        if (!pontePossibile()) return;
+        const leggi = () => {
+            const r = richiestaDaPsyDiary();
+            if (!r) return;
+            window.history.replaceState(window.history.state, '', location.pathname + location.search);
+            psyMandato.current = false;
+            if (r.modo === 'apri') {
+                setPsyAvviso('Ricevo il genogramma da PsyDiary…');
+                riceviDaPsyDiary(r).then(g => { if (g) apriDaPsyRef.current(g); else setPsyAvviso('PsyDiary non ha mandato il genogramma.'); });
+                return;
+            }
+            setPsyRichiesta(r);
+            setPsyScelta(r.modo === 'scegli');
+        };
+        leggi();
+        window.addEventListener('hashchange', leggi);
+        return () => window.removeEventListener('hashchange', leggi);
+    }, []);
+    // "Aggiorna": il genogramma collegato si manda da sé, appena l'elenco è pronto
+    useEffect(() => {
+        if (!psyRichiesta || psyRichiesta.modo !== 'aggiorna' || psyScelta) return;
+        const meta = genograms.find(g => g.id === psyRichiesta.id) || readLocalIndex().find(g => g.id === psyRichiesta.id);
+        if (meta) { mandaAPsyDiary(meta); return; }
+        const t = setTimeout(() => {
+            setPsyAvviso('Il genogramma collegato non è su questo dispositivo: scegline uno, oppure aprilo da PsyDiary con «Modifica in GenoGram Creator».');
+            setPsyScelta(true);
+        }, 2500);
+        return () => clearTimeout(t);
+    }, [psyRichiesta, genograms, psyScelta]);
+    const ponteUI = (
+        <>
+            {psyScelta && psyRichiesta && <ScegliPerPsyDiary genograms={genograms} avviso={psyRichiesta.modo === 'aggiorna' ? psyAvviso : undefined} onScegli={mandaAPsyDiary} onAnnulla={annullaPsy} />}
+            {psyAvviso && !psyScelta && <AvvisoPonte testo={psyAvviso} onChiudi={() => setPsyAvviso('')} />}
+        </>
+    );
+
     const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]; if (!file) return;
         const reader = new FileReader();
@@ -1687,6 +1794,7 @@ export default function GenogramApp() {
                     '--theme-accent': currentTheme.colors.accent,
                 } as React.CSSProperties}
             >
+                {ponteUI}
                 {/* STILI UTILITY (Necessari anche qui) */}
                 <style>{`
                 .theme-panel { background-color: var(--theme-bg-panel); border-color: var(--theme-border); color: var(--theme-text); }
@@ -1790,15 +1898,7 @@ export default function GenogramApp() {
                                     const catDef = categories.find(c => c.id === g.category) || categories[categories.length - 1];
                                     const Icon = ICON_MAP[catDef.iconKey] || Tag;
                                     return (
-                                        <div key={g.id} onClick={() => {
-                                            setShowMobileSidebar(false);
-                                            setCurrentGenId(g.id);
-                                            setMetaTitle(g.title);
-                                            setMetaCategory(g.category);
-                                            setCustomPresets(g.data?.presets || []);
-                                            resetEditorState(g.data?.nodes || [], g.data?.edges || [], g.data?.groups || [], g.data?.stickyNotes || [], g.data?.structuralMaps || []);
-                                            setView('editor');
-                                        }} className="gp-scheda group relative theme-panel rounded-xl shadow-sm hover:shadow-md transition-all border theme-border cursor-pointer overflow-hidden flex flex-col h-48">
+                                        <div key={g.id} onClick={() => apriNellEditor(g)} className="gp-scheda group relative theme-panel rounded-xl shadow-sm hover:shadow-md transition-all border theme-border cursor-pointer overflow-hidden flex flex-col h-48">
                                             <div className="gp-fascia absolute top-0 left-0 w-1.5 h-full" style={{ backgroundColor: catDef.color }} />
                                             <span className="gp-num" aria-hidden="true">{String(gi + 1).padStart(2, '0')}</span>
                                             <div className="p-5 flex-1 flex flex-col">
@@ -1807,6 +1907,7 @@ export default function GenogramApp() {
                                                         <Icon size={12} /> {catDef.label}
                                                     </div>
                                                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        {pontePossibile() && <button aria-label={`Invia «${g.title}» a PsyDiary`} title="Invia a PsyDiary" onClick={(e) => { e.stopPropagation(); inviaPsy(readFullGenogram(g)); }} className="text-gray-400 hover:text-blue-500"><Send size={16} /></button>}
                                                         <button aria-label="Esporta file" title="Esporta file" onClick={(e) => { e.stopPropagation(); exportSingleGenogram(g); }} className="text-gray-400 hover:text-blue-500"><Download size={16} /></button>
                                                         <button aria-label="Duplica" title="Duplica" onClick={(e) => { e.stopPropagation(); duplicateGenogram(g); }} className="text-gray-400 hover:text-green-600"><Copy size={16} /></button>
                                                         <button aria-label="Elimina" title="Elimina" onClick={(e) => {
@@ -1890,6 +1991,7 @@ export default function GenogramApp() {
                 touchAction: 'none'
             } as React.CSSProperties}
         >
+            {ponteUI}
             <style>{`
          .no-scrollbar::-webkit-scrollbar { display: none; }
          .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -2017,6 +2119,10 @@ export default function GenogramApp() {
 
                             <div className="h-px bg-gray-200 dark:bg-gray-600 my-2 opacity-30" />
 
+                            {pontePossibile() && <>
+                                <button onClick={() => inviaPsy(genogrammaCorrente())} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2 font-semibold"><Send size={14} /> Invia a PsyDiary</button>
+                                <div className="h-px bg-gray-200 dark:bg-gray-600 my-2 opacity-30" />
+                            </>}
                             <div className="text-[10px] uppercase font-bold opacity-50 mb-1 px-2">Documenti</div>
                             <button onClick={printVectorPDF} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><FileText size={14} /> PDF Vettoriale (Solo Grafico)</button>
                             <button onClick={() => setShowReportConfig(true)} className="block w-full text-left p-2 theme-hover text-xs rounded flex items-center gap-2"><FileText size={14} /> Report Clinico (Completo)</button>
