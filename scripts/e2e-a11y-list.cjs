@@ -20,8 +20,8 @@ const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + ' ' + m); if (!c) fai
   ok(await page.locator('svg text:has-text("Inizia il genogramma")').count() === 1, 'canvas vuoto: suggerimento su come iniziare');
 
   // Crea due persone
-  await page.mouse.move(600, 420); await page.keyboard.press('m'); await page.waitForTimeout(250);
-  await page.mouse.move(900, 420); await page.keyboard.press('f'); await page.waitForTimeout(250);
+  await page.mouse.move(600, 420); await page.keyboard.press('m'); await page.waitForTimeout(250); await page.keyboard.press('Enter'); // conferma il nome (si scrive subito)
+  await page.mouse.move(900, 420); await page.keyboard.press('f'); await page.waitForTimeout(250); await page.keyboard.press('Enter'); // conferma il nome (si scrive subito)
   ok(await page.locator('svg text:has-text("Inizia il genogramma")').count() === 0, 'il suggerimento sparisce alla prima persona');
 
   // 3. Vista a elenco

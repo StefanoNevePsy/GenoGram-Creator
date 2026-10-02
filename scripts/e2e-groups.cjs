@@ -22,9 +22,9 @@ const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + ' ' + m); if (!c) fai
         await page.click('button:has-text("Nuovo"):visible'); await page.waitForTimeout(300);
     };
     const makeGroup = async (x1, y1, x2, y2) => {
-        await page.mouse.move(x1, y1); await page.keyboard.press('m'); await page.waitForTimeout(120);
+        await page.mouse.move(x1, y1); await page.keyboard.press('m'); await page.waitForTimeout(120); await page.keyboard.press('Enter'); // conferma il nome (si scrive subito)
         await page.keyboard.press('Escape'); // il nodo spawnnato resta selezionato e bloccherebbe lo spawn successivo
-        await page.mouse.move(x2, y2); await page.keyboard.press('f'); await page.waitForTimeout(120);
+        await page.mouse.move(x2, y2); await page.keyboard.press('f'); await page.waitForTimeout(120); await page.keyboard.press('Enter'); // conferma il nome (si scrive subito)
         await page.keyboard.press('Escape');
         await page.mouse.move(x1 - 90, y1 - 90); await page.mouse.down();
         await page.mouse.move(x2 + 90, y2 + 90, { steps: 4 }); await page.mouse.up(); await page.waitForTimeout(150);
@@ -37,7 +37,7 @@ const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + ' ' + m); if (!c) fai
     // === 1. NODO → GRUPPO ===
     await fresh();
     await makeGroup(420, 300, 540, 300);
-    await page.mouse.move(1000, 250); await page.keyboard.press('m'); await page.waitForTimeout(200);
+    await page.mouse.move(1000, 250); await page.keyboard.press('m'); await page.waitForTimeout(200); await page.keyboard.press('Enter'); // conferma il nome (si scrive subito)
     const ext = await page.locator('svg g.cursor-pointer rect[width="40"]').last().boundingBox();
     const gA = await blob(0).boundingBox();
     await page.mouse.click(ext.x + 20, ext.y + 20); await page.waitForTimeout(250);
@@ -50,7 +50,7 @@ const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + ' ' + m); if (!c) fai
     // === 2. GRUPPO → NODO (maniglia gialla, ora fuori dal blob) ===
     await fresh();
     await makeGroup(420, 300, 540, 300);
-    await page.mouse.move(1000, 250); await page.keyboard.press('m'); await page.waitForTimeout(200);
+    await page.mouse.move(1000, 250); await page.keyboard.press('m'); await page.waitForTimeout(200); await page.keyboard.press('Enter'); // conferma il nome (si scrive subito)
     await page.keyboard.press('Escape');
     const ext2 = await page.locator('svg g.cursor-pointer rect[width="40"]').last().boundingBox();
     const selectBlob = async (i) => { const bb = await blob(i).boundingBox(); await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height - 3); await page.waitForTimeout(300); };
