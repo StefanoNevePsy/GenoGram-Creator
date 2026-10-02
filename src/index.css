@@ -25,3 +25,32 @@ body {
     background: white;
   }
 }
+/* ------------------------------------------------------------------------
+   Temi "PsyDiary" (chiaro e scuro): lo stesso aspetto dell'app PsyDiary.
+   Carta e inchiostro al posto del bianco e nero, Archivo per l'interfaccia,
+   Gloock per titoli ed età, La Belle Aurore per i nomi dei nuclei.
+   I colori arrivano dalle variabili --geno-* del tema.
+   ------------------------------------------------------------------------ */
+.tema-psydiary {
+  font-family: 'Archivo Variable', 'Helvetica Neue', Arial, system-ui, sans-serif;
+  font-variation-settings: 'wdth' 100;
+  -webkit-font-smoothing: antialiased;
+}
+.tema-psydiary h1, .tema-psydiary h2,
+.tema-psydiary .text-xl, .tema-psydiary .text-2xl, .tema-psydiary .text-3xl {
+  font-family: 'Gloock', 'Iowan Old Style', Georgia, serif;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.tema-psydiary svg text { font-family: 'Archivo Variable', 'Helvetica Neue', Arial, sans-serif; }
+.tema-psydiary svg text.geno-testo { font-weight: 650; }
+.tema-psydiary svg text.geno-eta { font-family: 'Gloock', Georgia, serif; font-weight: 400; font-size: 14px; opacity: 1; }
+.tema-psydiary svg text.geno-nucleo {
+  font-family: 'La Belle Aurore', 'Bradley Hand', cursive;
+  font-weight: 400; font-size: 19px; text-transform: none; letter-spacing: 0;
+}
+.tema-psydiary button, .tema-psydiary input, .tema-psydiary select, .tema-psydiary textarea { font-family: inherit; }
+.tema-psydiary ::selection { background: color-mix(in srgb, var(--theme-accent) 25%, transparent); }
+/* angoli morbidi come in PsyDiary */
+.tema-psydiary .rounded { border-radius: 10px; }
+.tema-psydiary .rounded-lg, .tema-psydiary .rounded-xl { border-radius: 16px; }

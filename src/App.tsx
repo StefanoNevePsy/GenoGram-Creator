@@ -22,7 +22,7 @@ import { getFirestore, collection, doc, setDoc, deleteDoc, query, onSnapshot } f
 export type RelationshipConfig = {
     label: string;
     color: string;
-    lineStyle: 'solid' | 'dashed' | 'dotted' | 'zigzag' | 'zigzag-thick';
+    lineStyle: 'solid' | 'dashed' | 'dotted' | 'zigzag' | 'zigzag-thick' | 'zigzag-soft';
     renderType:
     | 'standard' | 'double' | 'triple' | 'triple-zigzag' | 'arrow' | 'arrow-open' | 'arrow-thick'
     | 'arrow-x-center' | 'arrow-box-center' | 'arrow-diamond-center' | 'arrow-double-bar-center'
@@ -74,6 +74,8 @@ const BASE_REL_CONFIG: Record<string, RelationshipConfig> = {
     // 4. CONFLITTO E DISTANZA
     'distance': { label: 'Distanza', color: '#808080', lineStyle: 'dashed', renderType: 'standard' },
     'poor': { label: 'Povera', color: '#808080', lineStyle: 'dotted', renderType: 'standard' },
+    // Antipatia/disprezzo: negativa ma meno intensa di "Ostile" (zig-zag basso e tratteggiato)
+    'dislike': { label: 'Antipatia/Disprezzo', color: '#E8573F', lineStyle: 'zigzag-soft', renderType: 'standard' },
     'hostile': { label: 'Ostile', color: '#FF0000', lineStyle: 'zigzag', renderType: 'standard' },
     'close-hostile': { label: 'Vicini-Ostile', color: '#FF0000', lineStyle: 'solid', renderType: 'triple-zigzag-center' },
     'fusion-hostile': { label: 'Fusione & Conflitto', color: '#000000', lineStyle: 'solid', renderType: 'fusion-hostile' },
@@ -99,6 +101,94 @@ const BASE_REL_CONFIG: Record<string, RelationshipConfig> = {
     'custom': { label: 'Personalizzata', color: '#000000', lineStyle: 'solid', renderType: 'standard' }
 };
 
+// --- COLORI DEI TEMI "PSYDIARY" ---
+// I colori dei legami hanno un significato (verde affetto, rosso conflitto...):
+// i temi PsyDiary non li cambiano a caso, ridefiniscono le famiglie di colore
+// (variabili CSS --geno-*) con toni accordati alla carta chiara o scura.
+// Negli altri temi le variabili non esistono e restano i colori originali.
+const famigliaColore = (hex: string): string => {
+    const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || '').trim());
+    if (!m) return String(hex || '').toLowerCase() === 'red' ? 'rosso' : 'nero';
+    let h = m[1];
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+    const sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+    if (sat < 0.2 || d < 0.08) return l < 0.35 ? 'nero' : 'grigio';
+    let hue = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    hue = (hue * 60 + 360) % 360;
+    if (hue < 15 || hue >= 345) return l < 0.33 ? 'bordeaux' : 'rosso';
+    if (hue < 45) return 'arancio';
+    if (hue < 70) return 'oro';
+    if (hue < 170) return 'verde';
+    if (hue < 200) return 'ottanio';
+    if (hue < 270) return 'blu';
+    if (hue < 320) return 'viola';
+    return 'rosa';
+};
+const tinta = (hex: string, fallback?: string) => `var(--geno-${famigliaColore(hex)}, ${fallback || hex})`;
+const ROSSO = tinta('#FF0000', 'red');
+const GENO_VARS = ['nero', 'carta', 'carta2', 'grigio', 'verde', 'rosso', 'bordeaux', 'arancio', 'oro', 'ottanio', 'blu', 'viola', 'rosa', 'bordo'].map(n => '--geno-' + n);
+const varsTema = (t: AppTheme): Record<string, string> => (t.geno ? Object.fromEntries(Object.entries(t.geno).map(([k, v]) => ['--geno-' + k, v])) : {});
+// Nelle esportazioni (PNG, PDF) l'SVG viaggia da solo: i colori del tema vanno copiati dentro
+const copiaTemaInSvg = (clone: SVGSVGElement, origine: Element | null) => {
+    if (!origine) return;
+    const cs = getComputedStyle(origine);
+    GENO_VARS.forEach(n => { const v = cs.getPropertyValue(n).trim(); if (v) clone.style.setProperty(n, v); });
+};
+
+// Le note adesive sono HTML dentro l'SVG (foreignObject): il browser non
+// permette di trasformare in PNG/JPEG un'immagine che ne contiene ("tainted
+// canvas") e il download falliva. Per le immagini, nella sola copia esportata,
+// ogni foreignObject diventa testo SVG con lo stesso carattere, colore,
+// allineamento e ritorni a capo.
+const notaInTestoSvg = (clone: SVGSVGElement) => {
+    const NS = 'http://www.w3.org/2000/svg';
+    clone.querySelectorAll('foreignObject').forEach(fo => {
+        const x = parseFloat(fo.getAttribute('x') || '0'), y = parseFloat(fo.getAttribute('y') || '0');
+        const w = parseFloat(fo.getAttribute('width') || '0'), h = parseFloat(fo.getAttribute('height') || '0');
+        const div = fo.querySelector('div') as HTMLElement | null;
+        const st = div ? div.style : null;
+        const testo = (fo.textContent || '').replace(/\r/g, '');
+        const dim = parseFloat((st && st.fontSize) || '13') || 13;
+        const centrato = !!st && st.textAlign === 'center';
+        const riga = dim * 1.3;
+        // a capo come nel riquadro: sulle parole, con una stima della larghezza dei caratteri
+        const perRiga = Math.max(4, Math.floor(w / (dim * 0.55)));
+        const righe: string[] = [];
+        testo.split('\n').forEach(par => {
+            let cur = '';
+            par.split(/\s+/).forEach(par2 => {
+                let parola = par2;
+                while (parola.length > perRiga) { if (cur) { righe.push(cur); cur = ''; } righe.push(parola.slice(0, perRiga)); parola = parola.slice(perRiga); }
+                const prova = cur ? cur + ' ' + parola : parola;
+                if (prova.length > perRiga) { righe.push(cur); cur = parola; } else cur = prova;
+            });
+            righe.push(cur);
+        });
+        const max = Math.max(1, Math.floor(h / riga));
+        const visibili = righe.slice(0, max);
+        const t = document.createElementNS(NS, 'text');
+        const altezza = visibili.length * riga;
+        const y0 = centrato ? y + (h - altezza) / 2 + dim : y + dim;
+        t.setAttribute('x', String(centrato ? x + w / 2 : x));
+        t.setAttribute('y', String(y0));
+        if (centrato) t.setAttribute('text-anchor', 'middle');
+        t.setAttribute('font-size', String(dim));
+        t.setAttribute('font-family', (st && st.fontFamily) || 'sans-serif');
+        t.setAttribute('fill', (st && st.color) || '#000');
+        if (st && st.opacity) t.setAttribute('opacity', st.opacity);
+        visibili.forEach((r, i) => {
+            const ts = document.createElementNS(NS, 'tspan');
+            ts.setAttribute('x', String(centrato ? x + w / 2 : x));
+            if (i > 0) ts.setAttribute('dy', String(riga));
+            ts.textContent = r || ' ';
+            t.appendChild(ts);
+        });
+        fo.replaceWith(t);
+    });
+};
+
 const RELATION_CATEGORIES: Record<string, string[]> = {
     "Struttura / Coppia": [
         'marriage', 'secret', 'cohabitation', 'couple', 'divorce-commit',
@@ -108,7 +198,7 @@ const RELATION_CATEGORIES: Record<string, string[]> = {
     ],
     "Figli": ['child-bio', 'child-adopted', 'child-foster', 'twin-dizygotic', 'twin-monozygotic', 'pregnancy'],
     "Interazione / Affettive": ['correlated', 'harmony', 'friendship', 'best-friend', 'close', 'fusion', 'in-love', 'fan', 'spiritual'],
-    "Conflitto e Distanza": ['distance', 'poor', 'hostile', 'close-hostile', 'fusion-hostile', 'hate', 'cutoff', 'restored'],
+    "Conflitto e Distanza": ['distance', 'poor', 'dislike', 'hostile', 'close-hostile', 'fusion-hostile', 'hate', 'cutoff', 'restored'],
     "Violenza, Abuso e Potere": [
         'violence-psychological', 'violence-physical', 'violence-sexual',
         'abuse-physical', 'abuse-emotional', 'abuse-sexual', 'neglect',
@@ -147,7 +237,10 @@ export type AppTheme = {
         text: string;        // Testo Principale
         textMuted: string;   // Testo Secondario
         accent: string;      // Colore Accento (Blu, Viola, ecc)
-    }
+    };
+    // Temi con uno stile completo (caratteri, carta, colori dei simboli), es. PsyDiary
+    stile?: 'psydiary';
+    geno?: Record<string, string>;
 };
 
 // --- DEFINIZIONE PALETTE GLOBALI ---
@@ -184,6 +277,7 @@ const NOTE_TEXT_COLORS = [
 const NOTE_FONTS = [
     { label: 'App Default', value: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }, // Font standard dell'app
     { label: 'Handwriting', value: '"Comic Sans MS", "Chalkboard SE", sans-serif' },
+    { label: 'PsyDiary a mano', value: '"La Belle Aurore", "Bradley Hand", cursive' },
     { label: 'Sans Serif', value: 'ui-sans-serif, system-ui, sans-serif' },
     { label: 'Serif', value: 'ui-serif, Georgia, serif' },
     { label: 'Monospace', value: 'ui-monospace, monospace' },
@@ -202,6 +296,12 @@ const PRESET_THEMES: AppTheme[] = [
     {
         id: 'nordic', label: 'Nordic Snow', type: 'light',
         colors: { bgMain: '#eceff4', bgPanel: '#e5e9f0', border: '#d8dee9', text: '#2e3440', textMuted: '#4c566a', accent: '#5e81ac' }
+    },
+    {
+        // Lo stile di PsyDiary: carta, inchiostro blu-nero, vermiglio, Gloock/Archivo/La Belle Aurore
+        id: 'psydiary-chiaro', label: 'PsyDiary · Carta', type: 'light', stile: 'psydiary',
+        colors: { bgMain: '#f6f0e6', bgPanel: '#f1e9db', border: '#c9c2b6', text: '#1a2131', textMuted: '#4f5563', accent: '#c74a31' },
+        geno: { nero: '#1a2131', carta: '#f6f0e6', carta2: '#f1e9db', grigio: '#757a85', bordo: '#c9c2b6', verde: '#287c42', rosso: '#c9302d', bordeaux: '#822b31', arancio: '#e2832d', oro: '#bd9121', ottanio: '#227a7a', blu: '#325caf', viola: '#7b489e', rosa: '#d14186' }
     },
     // DARK THEMES
     {
@@ -223,6 +323,11 @@ const PRESET_THEMES: AppTheme[] = [
     {
         id: 'forest', label: 'Forest Night', type: 'dark',
         colors: { bgMain: '#0d1117', bgPanel: '#161b22', border: '#30363d', text: '#c9d1d9', textMuted: '#8b949e', accent: '#238636' }
+    },
+    {
+        id: 'psydiary-scuro', label: 'PsyDiary · Inchiostro', type: 'dark', stile: 'psydiary',
+        colors: { bgMain: '#10141b', bgPanel: '#181c24', border: '#3b3d40', text: '#ede7dc', textMuted: '#b7b0a5', accent: '#ef7c59' },
+        geno: { nero: '#ede7dc', carta: '#10141b', carta2: '#181c24', grigio: '#857f76', bordo: '#3b3d40', verde: '#6fc884', rosso: '#f97165', bordeaux: '#d56e78', arancio: '#f8a052', oro: '#eac25a', ottanio: '#64c3c3', blu: '#81aaf7', viola: '#c295e3', rosa: '#fa86b6' }
     }
 ];
 
@@ -573,10 +678,10 @@ const extractYear = (text: string): number => {
 // --- COMPONENTS ---
 
 const Legend = ({ x, y, darkMode, nodes, edges }: { x: number, y: number, darkMode: boolean, nodes: GenNode[], edges: RelationEdge[] }) => {
-    const bg = darkMode ? '#1f2937' : '#ffffff';
-    const text = darkMode ? '#f3f4f6' : '#1f2937';
-    const border = darkMode ? '#374151' : '#e5e7eb';
-    const subText = darkMode ? '#9ca3af' : '#6b7280';
+    const bg = `var(--geno-carta2, ${darkMode ? '#1f2937' : '#ffffff'})`;
+    const text = `var(--geno-nero, ${darkMode ? '#f3f4f6' : '#1f2937'})`;
+    const border = `var(--geno-bordo, ${darkMode ? '#374151' : '#e5e7eb'})`;
+    const subText = `var(--geno-grigio, ${darkMode ? '#9ca3af' : '#6b7280'})`;
 
     // 1. Calcola elementi unici
     const usedGenders = Array.from(new Set(nodes.map(n => n.gender))).sort();
@@ -677,6 +782,7 @@ const LinePreview = ({ type, width = 50, darkMode = false, transparent = false }
     let color = config.color;
     if (color === '#000000' && darkMode) color = '#ffffff';
     if (config.renderType.includes('hostile') || config.renderType.includes('triple-zigzag') || config.lineStyle === 'zigzag-thick') color = '#ef4444';
+    const stroke0 = tinta(config.color, color);
 
     let actualEndX = width;
     const midX = width / 2;
@@ -692,21 +798,22 @@ const LinePreview = ({ type, width = 50, darkMode = false, transparent = false }
     if (config.lineStyle.startsWith('zigzag')) {
         let amp = width > 30 ? 3 : 2; let freq = width > 30 ? 8 : 6;
         if (config.lineStyle === 'zigzag-thick') { amp = width > 30 ? 4 : 3; freq = width > 30 ? 6 : 4; }
+        if (config.lineStyle === 'zigzag-soft') { amp = width > 30 ? 2 : 1.5; freq = width > 30 ? 7 : 5; }
         pathD = getZigZagPath(0, midY, actualEndX, midY, amp, freq);
         strokeW = "1.5";
     }
-    const strokeDash = config.lineStyle === 'dashed' ? '6,3' : (config.lineStyle === 'dotted' ? '2,2' : '');
+    const strokeDash = config.lineStyle === 'dashed' ? '6,3' : (config.lineStyle === 'dotted' ? '2,2' : (config.lineStyle === 'zigzag-soft' ? '5,3' : ''));
 
     const decX = midX;
     const decY = midY;
-    const stroke = color;
+    const stroke = stroke0;
     const arrowTrans = `translate(${actualEndX}, ${midY})`;
     const centerArrowTrans = `translate(${midX}, ${midY})`;
 
     const Decorator = () => {
         if (config.renderType === 'fusion' || config.renderType === 'triple') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /></g>;
-        if (config.renderType === 'fusion-hostile') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /><path d={getZigZagPath(0, midY, actualEndX, midY)} stroke="red" strokeWidth={1.5} fill="none" /></g>;
-        if (config.renderType === 'triple-zigzag') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /><path d={getZigZagPath(0, midY, actualEndX, midY)} stroke="red" strokeWidth={1.5} fill="none" /></g>;
+        if (config.renderType === 'fusion-hostile') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /><path d={getZigZagPath(0, midY, actualEndX, midY)} stroke={ROSSO} strokeWidth={1.5} fill="none" /></g>;
+        if (config.renderType === 'triple-zigzag') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /><path d={getZigZagPath(0, midY, actualEndX, midY)} stroke={ROSSO} strokeWidth={1.5} fill="none" /></g>;
         if (config.renderType === 'double' || config.renderType === 'double-zigzag' || config.renderType === 'best-friend') return <path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" strokeDasharray={strokeDash} />;
 
         if (config.renderType === 'oblique') return <line x1={decX + 3} y1={decY - 6} x2={decX - 3} y2={decY + 6} stroke={stroke} strokeWidth={2} />;
@@ -720,7 +827,7 @@ const LinePreview = ({ type, width = 50, darkMode = false, transparent = false }
         if (config.renderType === 'cutoff-repaired-circle') return <g><line x1={decX - 3} y1={decY - 6} x2={decX - 9} y2={decY + 6} stroke={stroke} strokeWidth={2} /><circle cx={decX} cy={decY} r={4} fill="none" stroke={stroke} strokeWidth={1.5} /><line x1={decX + 9} y1={decY - 6} x2={decX + 3} y2={decY + 6} stroke={stroke} strokeWidth={2} /></g>;
         if (config.renderType === 'dashed-inner') return <g><path d={pathD} stroke={stroke} strokeWidth={1.5} strokeDasharray="3,3" fill="none" transform={`translate(0, 4)`} /></g>;
 
-        if (config.renderType === 'triple-zigzag-center-arrow') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /><path d={getZigZagPath(0, midY, actualEndX, midY, 3, 8)} stroke="red" strokeWidth={1.5} fill="none" /><polygon points="-5,-4 5,0 -5,4" fill="red" transform={arrowTrans} /></g>;
+        if (config.renderType === 'triple-zigzag-center-arrow') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, 3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(0, -3)" fill="none" /><path d={getZigZagPath(0, midY, actualEndX, midY, 3, 8)} stroke={ROSSO} strokeWidth={1.5} fill="none" /><polygon points="-5,-4 5,0 -5,4" fill={ROSSO} transform={arrowTrans} /></g>;
 
         if (config.renderType === 'triangle-up-center') return <polygon points="-5,0 5,0 0,-8" fill={stroke} transform={centerArrowTrans} />;
 
@@ -798,7 +905,7 @@ const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customConfig, 
 
     const finalColor = edge.color || baseConfig.color;
     const renderType = baseConfig.renderType;
-    const stroke = isSelected ? '#3b82f6' : (darkMode && finalColor === '#000000' ? '#ffffff' : finalColor);
+    const stroke = isSelected ? '#3b82f6' : tinta(finalColor, darkMode && finalColor === '#000000' ? '#ffffff' : finalColor);
     const isStructural = ['marriage', 'secret', 'couple', 'divorce-commit', 'separation', 'separation-repaired', 'separation-cohab', 'divorce', 'divorce-repaired', 'cohabitation', 'affair', 're-marriage', 'engagement', 'one-night'].includes(edge.type);
     const marriageBarY = getMarriageBarY(start.y, end.y);
     let midX = (start.x + end.x) / 2;
@@ -851,14 +958,18 @@ const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customConfig, 
     } else if (baseConfig.lineStyle.startsWith('zigzag')) {
         let amp = 4; let freq = 12;
         if (baseConfig.lineStyle === 'zigzag-thick') { amp = 6; freq = 10; }
+        if (baseConfig.lineStyle === 'zigzag-soft') { amp = 2.5; freq = 9; }
         pathD = getZigZagPath(start.x, start.y, actualEndX, actualEndY, amp, freq);
     }
     else pathD = `M ${start.x} ${start.y} Q ${midX} ${midY} ${actualEndX} ${actualEndY}`;
 
-    const strokeDash = baseConfig.lineStyle === 'dashed' ? '8,4' : (baseConfig.lineStyle === 'dotted' ? '2,2' : '0');
+    const strokeDash = baseConfig.lineStyle === 'dashed' ? '8,4' : (baseConfig.lineStyle === 'dotted' ? '2,2' : (baseConfig.lineStyle === 'zigzag-soft' ? '7,4' : '0'));
 
+    // Le barre di taglio, separazione e divorzio si disegnano attorno al centro
+    // e ruotano con la linea (prima restavano verticali sulle linee inclinate)
+    const ruota = (el: any) => <g transform={centerArrowTrans}>{el}</g>;
     const Decorator = () => {
-        let decX = midX; let decY = midY;
+        const decX = 0; const decY = 0;
 
         // FIX: Rendering specifico per Migliore Amico (Dotted centrale + 2 Solide esterne)
         // Disegniamo le due linee esterne SENZA strokeDasharray così rimangono solide
@@ -872,27 +983,27 @@ const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customConfig, 
         if (renderType === 'fusion' || renderType === 'triple') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-3,-3)" fill="none" /></g>;
 
         // ... il resto del componente Decorator rimane uguale ...
-        if (renderType === 'fusion-hostile') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-3,-3)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY)} stroke="red" strokeWidth={1.5} fill="none" /></g>;
-        if (renderType === 'triple-zigzag') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-3,-3)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY)} stroke="red" strokeWidth={1.5} fill="none" /></g>;
+        if (renderType === 'fusion-hostile') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-3,-3)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY)} stroke={ROSSO} strokeWidth={1.5} fill="none" /></g>;
+        if (renderType === 'triple-zigzag') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-3,-3)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY)} stroke={ROSSO} strokeWidth={1.5} fill="none" /></g>;
         if (renderType === 'double' || renderType === 'double-zigzag' || renderType === 'best-friend') return <path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" strokeDasharray={strokeDash} />;
 
         // NUOVI SIMBOLI (CORREZIONE ANGOLO /)
-        if (renderType === 'oblique') return <line x1={decX + 5} y1={decY - 10} x2={decX - 5} y2={decY + 10} stroke={stroke} strokeWidth={2} />;
-        if (renderType === 'oblique-double') return <g><line x1={decX + 2} y1={decY - 10} x2={decX - 8} y2={decY + 10} stroke={stroke} strokeWidth={2} /><line x1={decX + 8} y1={decY - 10} x2={decX - 2} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>;
-        if (renderType === 'x-cross') return <g><line x1={decX + 5} y1={decY - 10} x2={decX - 5} y2={decY + 10} stroke={stroke} strokeWidth={2} /><line x1={decX - 5} y1={decY - 10} x2={decX + 5} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>;
-        if (renderType === 'oblique-double-crossed') return <g>
+        if (renderType === 'oblique') return ruota(<line x1={decX + 5} y1={decY - 10} x2={decX - 5} y2={decY + 10} stroke={stroke} strokeWidth={2} />);
+        if (renderType === 'oblique-double') return ruota(<g><line x1={decX + 2} y1={decY - 10} x2={decX - 8} y2={decY + 10} stroke={stroke} strokeWidth={2} /><line x1={decX + 8} y1={decY - 10} x2={decX - 2} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>);
+        if (renderType === 'x-cross') return ruota(<g><line x1={decX + 5} y1={decY - 10} x2={decX - 5} y2={decY + 10} stroke={stroke} strokeWidth={2} /><line x1={decX - 5} y1={decY - 10} x2={decX + 5} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>);
+        if (renderType === 'oblique-double-crossed') return ruota(<g>
             <line x1={decX + 2} y1={decY - 10} x2={decX - 8} y2={decY + 10} stroke={stroke} strokeWidth={2} />
             <line x1={decX + 8} y1={decY - 10} x2={decX - 2} y2={decY + 10} stroke={stroke} strokeWidth={2} />
             <line x1={decX - 8} y1={decY - 10} x2={decX + 8} y2={decY + 10} stroke={stroke} strokeWidth={2} />
-        </g>;
+        </g>);
 
-        if (renderType === 'cutoff-double') return <g><line x1={decX - 3} y1={decY - 10} x2={decX - 3} y2={decY + 10} stroke={stroke} strokeWidth={2} /><line x1={decX + 3} y1={decY - 10} x2={decX + 3} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>;
-        if (renderType === 'cutoff') return <line x1={decX} y1={decY - 10} x2={decX} y2={decY + 10} stroke={stroke} strokeWidth={3} />;
-        if (renderType === 'cutoff-repaired-circle') return <g><line x1={decX - 4} y1={decY - 10} x2={decX - 14} y2={decY + 10} stroke={stroke} strokeWidth={2} /><circle cx={decX} cy={decY} r={5} fill="none" stroke={stroke} strokeWidth={1.5} /><line x1={decX + 14} y1={decY - 10} x2={decX + 4} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>;
+        if (renderType === 'cutoff-double') return ruota(<g><line x1={decX - 3} y1={decY - 10} x2={decX - 3} y2={decY + 10} stroke={stroke} strokeWidth={2} /><line x1={decX + 3} y1={decY - 10} x2={decX + 3} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>);
+        if (renderType === 'cutoff') return ruota(<line x1={decX} y1={decY - 10} x2={decX} y2={decY + 10} stroke={stroke} strokeWidth={3} />);
+        if (renderType === 'cutoff-repaired-circle') return ruota(<g><line x1={decX - 4} y1={decY - 10} x2={decX - 14} y2={decY + 10} stroke={stroke} strokeWidth={2} /><circle cx={decX} cy={decY} r={5} fill="none" stroke={stroke} strokeWidth={1.5} /><line x1={decX + 14} y1={decY - 10} x2={decX + 4} y2={decY + 10} stroke={stroke} strokeWidth={2} /></g>);
 
         if (renderType === 'dashed-inner') return <g><path d={pathD} stroke={stroke} strokeWidth={1.5} strokeDasharray="4,4" fill="none" transform={`translate(0, 6)`} /></g>;
 
-        if (renderType === 'triple-zigzag-center') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(6,6)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-6,-6)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY, 4, 12)} stroke="red" strokeWidth={1.5} fill="none" /></g>;
+        if (renderType === 'triple-zigzag-center') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(6,6)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-6,-6)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY, 4, 12)} stroke={ROSSO} strokeWidth={1.5} fill="none" /></g>;
 
         if (renderType === 'triangle-up-center') return <polygon points="-6,0 6,0 0,-10" fill={stroke} transform={`translate(${midX},${midY})`} />;
 
@@ -910,8 +1021,8 @@ const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customConfig, 
         }
 
         if (renderType === 'arrow-x-center') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /><g transform={centerArrowTrans}><line x1="-6" y1="-6" x2="6" y2="6" stroke={stroke} strokeWidth={2} /><line x1="-6" y1="6" x2="6" y2="-6" stroke={stroke} strokeWidth={2} /></g></g>;
-        if (renderType === 'arrow-box-center') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /><rect x="-6" y="-6" width="12" height="12" stroke={stroke} strokeWidth={2} fill="white" transform={centerArrowTrans} /></g>;
-        if (renderType === 'arrow-diamond-center') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /><polygon points="0,-6 6,0 0,6 -6,0" stroke={stroke} strokeWidth={2} fill="white" transform={centerArrowTrans} /></g>;
+        if (renderType === 'arrow-box-center') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /><rect x="-6" y="-6" width="12" height="12" stroke={stroke} strokeWidth={2} fill="var(--geno-carta, white)" transform={centerArrowTrans} /></g>;
+        if (renderType === 'arrow-diamond-center') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /><polygon points="0,-6 6,0 0,6 -6,0" stroke={stroke} strokeWidth={2} fill="var(--geno-carta, white)" transform={centerArrowTrans} /></g>;
         if (renderType === 'arrow-double-bar-center') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /><g transform={centerArrowTrans}><line x1="-3" y1="-8" x2="-3" y2="8" stroke={stroke} strokeWidth={2} /><line x1="3" y1="-8" x2="3" y2="8" stroke={stroke} strokeWidth={2} /></g></g>;
 
         if (renderType.includes('arrow') && !renderType.includes('center') && !renderType.includes('thick')) return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /></g>;
@@ -920,7 +1031,7 @@ const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customConfig, 
         if (renderType === 'arrow-end') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /></g>;
         if (renderType === 'arrow-open-end') return <g><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={arrowTrans} /></g>;
         if (renderType === 'arrow-open-center') return <g><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={centerArrowTrans} /></g>;
-        if (renderType === 'triple-zigzag-center-arrow') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(6,6)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-6,-6)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY, 4, 12)} stroke="red" strokeWidth={1.5} fill="none" /><polygon points="-6,-6 6,0 -6,6" fill="red" transform={arrowTrans} /></g>;
+        if (renderType === 'triple-zigzag-center-arrow') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(6,6)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-6,-6)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY, 4, 12)} stroke={ROSSO} strokeWidth={1.5} fill="none" /><polygon points="-6,-6 6,0 -6,6" fill={ROSSO} transform={arrowTrans} /></g>;
 
         return null;
     };
@@ -965,11 +1076,11 @@ const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, se
         if (e.key === 'Escape') setIsEditing(false);
     };
 
-    const strokeColor = darkMode ? '#ffffff' : '#000000';
+    const strokeColor = `var(--geno-nero, ${darkMode ? '#ffffff' : '#000000'})`;
     const strokeWidth = isSelected ? 3 : (node.indexPerson ? 3 : 1.5);
-    const fill = isSelected ? (darkMode ? '#374151' : '#e0f2fe') : (darkMode ? '#1f2937' : '#ffffff');
-    const textColor = darkMode ? '#ffffff' : '#000000';
-    const textBg = darkMode ? '#111827' : '#ffffff';
+    const fill = isSelected ? (darkMode ? '#374151' : '#e0f2fe') : `var(--geno-carta, ${darkMode ? '#1f2937' : '#ffffff'})`;
+    const textColor = `var(--geno-nero, ${darkMode ? '#ffffff' : '#000000'})`;
+    const textBg = `var(--geno-carta, ${darkMode ? '#111827' : '#ffffff'})`;
     const w = NODE_WIDTH, h = NODE_HEIGHT;
     const r = NODE_RADIUS;
 
@@ -995,15 +1106,15 @@ const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, se
             {/* Abuso Sostanze: Arancione (Bottom Half) */}
             {node.substanceAbuse && (
                 node.gender === 'M'
-                    ? <rect x={0} y={h / 2} width={w} height={h / 2} fill="#f97316" fillOpacity="0.8" stroke="none" />
-                    : <path d={`M 0 ${h / 2} A ${r} ${r} 0 0 0 ${w} ${h / 2} Z`} fill="#f97316" fillOpacity="0.8" stroke="none" />
+                    ? <rect x={0} y={h / 2} width={w} height={h / 2} fill="var(--geno-arancio, #f97316)" fillOpacity="0.8" stroke="none" />
+                    : <path d={`M 0 ${h / 2} A ${r} ${r} 0 0 0 ${w} ${h / 2} Z`} fill="var(--geno-arancio, #f97316)" fillOpacity="0.8" stroke="none" />
             )}
 
             {/* Problema Psi: Viola (Left Half) */}
             {node.mentalIssue && (
                 node.gender === 'M'
-                    ? <rect x={0} y={0} width={w / 3} height={h} fill="#8b5cf6" fillOpacity="0.8" stroke="none" />
-                    : <path d={`M ${r} 0 A ${r} ${r} 0 0 0 ${r} ${h} Z`} fill="#8b5cf6" fillOpacity="0.8" stroke="none" />
+                    ? <rect x={0} y={0} width={w / 3} height={h} fill="var(--geno-viola, #8b5cf6)" fillOpacity="0.8" stroke="none" />
+                    : <path d={`M ${r} 0 A ${r} ${r} 0 0 0 ${r} ${h} Z`} fill="var(--geno-viola, #8b5cf6)" fillOpacity="0.8" stroke="none" />
             )}
 
             {/* Omosessualità: Rosa (Triangolo Inverso) */}
@@ -1011,7 +1122,7 @@ const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, se
             {node.gayLesbian && (
                 <path
                     d={`M ${w / 2 - 7} ${h - 12} L ${w / 2 + 7} ${h - 12} L ${w / 2} ${h} Z`}
-                    fill="#ec4899"
+                    fill="var(--geno-rosa, #ec4899)"
                     stroke={fill}
                     strokeWidth={1}
                 />
@@ -1062,7 +1173,7 @@ const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, se
                     dominantBaseline="middle"
                     textAnchor="middle"
                     fill={textColor}
-                    className={`text-[${size}px] font-sans ${bold ? 'font-bold' : ''} select-none`}
+                    className={`geno-testo text-[${size}px] font-sans ${bold ? 'font-bold' : ''} select-none`}
                     style={{ fontSize: size }} // Fallback style
                 >
                     {text}
@@ -1103,7 +1214,7 @@ const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, se
                     dominantBaseline="middle"
                     textAnchor="middle"
                     fill={textColor}
-                    className="text-[11px] font-bold select-none pointer-events-none opacity-80"
+                    className="geno-eta text-[11px] font-bold select-none pointer-events-none opacity-80"
                 >
                     {internalLabel}
                 </text>
@@ -1111,7 +1222,7 @@ const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, se
 
             {node.label && <TextLabel y={h + 14} text={node.label} size={9} />}
 
-            {node.notes && node.notes.length > 0 && <circle cx={w + 5} cy={0} r={4} fill="#ef4444" stroke="white" strokeWidth={1} />}
+            {node.notes && node.notes.length > 0 && <circle cx={w + 5} cy={0} r={4} fill="var(--geno-rosso, #ef4444)" stroke={textBg} strokeWidth={1} />}
 
             {isSelected && !selectionMode && !isEditing && (
                 <g>
@@ -4231,8 +4342,13 @@ export default function GenogramApp() {
                 maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
             }
         });
+        // anche le note adesive, che altrimenti restavano tagliate nelle esportazioni
+        stickyNotes.forEach(sn => {
+            minX = Math.min(minX, sn.x); minY = Math.min(minY, sn.y);
+            maxX = Math.max(maxX, sn.x + (sn.width || 0) + 4); maxY = Math.max(maxY, sn.y + (sn.height || 0) + 4);
+        });
         return { minX, minY, maxX, maxY };
-    }, [nodes, groups]);
+    }, [nodes, groups, stickyNotes]);
 
     const getGraphBounds = () => {
         let { minX, minY, maxX, maxY } = getContentBounds();
@@ -4278,7 +4394,7 @@ export default function GenogramApp() {
         svgClone.setAttribute('height', `${bounds.h * scaleFactor}`);
         svgClone.style.fontFamily = 'sans-serif';
 
-        const svgData = new XMLSerializer().serializeToString(svgClone);
+        const svgData = (copiaTemaInSvg(svgClone, svgRef.current), notaInTestoSvg(svgClone), new XMLSerializer().serializeToString(svgClone));
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         const img = new Image();
@@ -4295,8 +4411,9 @@ export default function GenogramApp() {
 
             if (ctx) {
                 ctx.font = '12px sans-serif';
-                if (format === 'jpeg') {
-                    ctx.fillStyle = darkMode ? '#111827' : '#ffffff';
+                // con i temi PsyDiary anche il PNG ha la carta del tema (nello scuro, trasparente non si leggerebbe)
+                if (format === 'jpeg' || currentTheme.stile) {
+                    ctx.fillStyle = currentTheme.stile ? currentTheme.colors.bgMain : (darkMode ? '#111827' : '#ffffff');
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
                 }
                 ctx.drawImage(img, 0, 0);
@@ -4378,7 +4495,7 @@ export default function GenogramApp() {
             svgClone.style.display = 'block';
             svgClone.style.overflow = 'visible';
 
-            const svgHtml = new XMLSerializer().serializeToString(svgClone);
+            const svgHtml = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
 
             w.document.write(`
                 <!DOCTYPE html>
@@ -4514,7 +4631,7 @@ export default function GenogramApp() {
             // Altezza fissa per la prima pagina, il resto scorre
             svgClone.setAttribute('height', '50vh');
 
-            const svgHtml = new XMLSerializer().serializeToString(svgClone);
+            const svgHtml = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
 
             // Genera il contenuto testuale usando le opzioni
             const reportHtml = generateReportHTML(nodes, edges, groups, options);
@@ -4538,9 +4655,9 @@ export default function GenogramApp() {
                 if (hasEndArrow) actualEndX -= 6;
 
                 let pathD = `M 0 7 L ${actualEndX} 7`;
-                if (config.lineStyle.startsWith('zigzag')) pathD = getZigZagPath(0, 7, actualEndX, 7, 3, 8);
+                if (config.lineStyle.startsWith('zigzag')) pathD = config.lineStyle === 'zigzag-soft' ? getZigZagPath(0, 7, actualEndX, 7, 2, 7) : getZigZagPath(0, 7, actualEndX, 7, 3, 8);
 
-                const strokeDash = config.lineStyle === 'dashed' ? 'stroke-dasharray="4,2"' : (config.lineStyle === 'dotted' ? 'stroke-dasharray="1,2"' : '');
+                const strokeDash = config.lineStyle === 'dashed' ? 'stroke-dasharray="4,2"' : (config.lineStyle === 'dotted' ? 'stroke-dasharray="1,2"' : (config.lineStyle === 'zigzag-soft' ? 'stroke-dasharray="4,2"' : ''));
                 const strokeW = config.lineStyle.startsWith('zigzag') ? "1.5" : "2";
 
                 let baseHtml = '';
@@ -4623,9 +4740,10 @@ export default function GenogramApp() {
     if (view === 'dashboard') {
         return (
             <div
-                className="h-screen flex flex-col transition-colors duration-300"
+                className={`h-screen flex flex-col transition-colors duration-300 ${currentTheme.stile ? 'tema-' + currentTheme.stile : ''}`}
                 // APPLICHIAMO LE VARIABILI CSS ANCHE QUI
                 style={{
+                    ...varsTema(currentTheme),
                     backgroundColor: currentTheme.colors.bgMain,
                     color: currentTheme.colors.text,
                     '--theme-bg-main': currentTheme.colors.bgMain,
@@ -4780,8 +4898,9 @@ export default function GenogramApp() {
 
     return (
         <div
-            className="h-screen flex flex-col overflow-hidden transition-colors duration-300 relative"
+            className={`h-screen flex flex-col overflow-hidden transition-colors duration-300 relative ${currentTheme.stile ? 'tema-' + currentTheme.stile : ''}`}
             style={{
+                ...varsTema(currentTheme),
                 backgroundColor: currentTheme.colors.bgMain,
                 color: currentTheme.colors.text,
                 '--theme-bg-main': currentTheme.colors.bgMain,
@@ -5019,7 +5138,7 @@ export default function GenogramApp() {
                                     const { d: pathD, cx, cy } = geom;
 
                                     const isSel = selectedGroupIds.includes(g.id);
-                                    const gColor = (g.color === '#000000' && darkMode) ? '#ffffff' : g.color;
+                                    const gColor = tinta(g.color, (g.color === '#000000' && darkMode) ? '#ffffff' : g.color);
 
                                     // Label Pos logic
                                     const labelX = g.labelPos ? g.labelPos.x : cx;
@@ -5056,7 +5175,7 @@ export default function GenogramApp() {
                                                     }}
                                                 >
                                                     <rect x={-(g.label.length * 4) - 10} y="-12" width={(g.label.length * 8) + 20} height="24" fill={currentTheme.colors.bgPanel} fillOpacity="0.8" rx="4" stroke={isSel ? 'blue' : 'transparent'} />
-                                                    <text textAnchor="middle" dy="5" fill={gColor} className="text-xs font-bold uppercase select-none pointer-events-none">{g.label}</text>
+                                                    <text textAnchor="middle" dy="5" fill={gColor} className="geno-nucleo text-xs font-bold uppercase select-none pointer-events-none">{g.label}</text>
                                                 </g>
                                             )}
                                         </g>
