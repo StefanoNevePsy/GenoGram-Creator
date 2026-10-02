@@ -44,9 +44,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # la CLI di Capacitor 8 richiede Node 22
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       # Capacitor 8 compila in Java 21
