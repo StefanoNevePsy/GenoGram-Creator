@@ -22,6 +22,7 @@ import { BASE_REL_CONFIG, RELATION_CATEGORIES } from './config/relationships';
 import type { CategoryDef } from './config/categories';
 import { ICON_MAP, DEFAULT_CATEGORIES } from './config/categories';
 import { NOTE_BG_PALETTES, NOTE_TEXT_COLORS, NOTE_FONTS, PRESET_THEMES } from './config/themes';
+import { tinta, varsTema, copiaTemaInSvg, notaInTestoSvg } from './utils/tema';
 import { GRID_SIZE, SNAP_SIZE, CANVAS_SIZE, CENTER_POS, NODE_WIDTH, NODE_HEIGHT, MARRIAGE_BAR_Y } from './config/constants';
 import type { Gender, GenNode, RelationEdge, NodeGroup, CustomPreset, GenogramMeta, StickyNoteData, StructuralMap, ReportOptions } from './types';
 import { calculateAge, calculateAgeAtDeath, extractYear } from './utils/dates';
@@ -1195,7 +1196,7 @@ export default function GenogramApp() {
         svgClone.setAttribute('height', `${bounds.h}`);
         svgClone.style.fontFamily = 'sans-serif';
 
-        const svgData = new XMLSerializer().serializeToString(svgClone);
+        const svgData = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
         const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1222,7 +1223,7 @@ export default function GenogramApp() {
         svgClone.setAttribute('height', `${bounds.h * scaleFactor}`);
         svgClone.style.fontFamily = 'sans-serif';
 
-        const svgData = new XMLSerializer().serializeToString(svgClone);
+        const svgData = (copiaTemaInSvg(svgClone, svgRef.current), notaInTestoSvg(svgClone), new XMLSerializer().serializeToString(svgClone));
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         const img = new Image();
@@ -1239,8 +1240,9 @@ export default function GenogramApp() {
 
             if (ctx) {
                 ctx.font = '12px sans-serif';
-                if (format === 'jpeg') {
-                    ctx.fillStyle = darkMode ? '#111827' : '#ffffff';
+                // con i temi PsyDiary anche il PNG ha la carta del tema (nello scuro, trasparente non si leggerebbe)
+                if (format === 'jpeg' || currentTheme.stile) {
+                    ctx.fillStyle = currentTheme.stile ? currentTheme.colors.bgMain : (darkMode ? '#111827' : '#ffffff');
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
                 }
                 ctx.drawImage(img, 0, 0);
@@ -1292,7 +1294,7 @@ export default function GenogramApp() {
             const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
 
             // 1. Determina il colore di sfondo attuale
-            const bgColor = darkMode ? '#111827' : '#ffffff'; // gray-900 vs white
+            const bgColor = currentTheme.stile ? currentTheme.colors.bgMain : (darkMode ? '#111827' : '#ffffff'); // gray-900 vs white
 
             // 2. Crea un rettangolo di sfondo
             const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -1322,7 +1324,7 @@ export default function GenogramApp() {
             svgClone.style.display = 'block';
             svgClone.style.overflow = 'visible';
 
-            const svgHtml = new XMLSerializer().serializeToString(svgClone);
+            const svgHtml = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
 
             w.document.write(`
                 <!DOCTYPE html>
@@ -1473,7 +1475,7 @@ export default function GenogramApp() {
             // Altezza fissa per la prima pagina, il resto scorre
             svgClone.setAttribute('height', '50vh');
 
-            const svgHtml = new XMLSerializer().serializeToString(svgClone);
+            const svgHtml = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
 
             // Genera il contenuto testuale usando le opzioni
             const reportHtml = generateReportHTML(nodes, edges, groups, options);
@@ -1499,9 +1501,9 @@ export default function GenogramApp() {
                 if (hasEndArrow) actualEndX -= 6;
 
                 let pathD = `M 0 7 L ${actualEndX} 7`;
-                if (config.lineStyle.startsWith('zigzag')) pathD = getZigZagPath(0, 7, actualEndX, 7, 3, 8);
+                if (config.lineStyle.startsWith('zigzag')) pathD = config.lineStyle === 'zigzag-soft' ? getZigZagPath(0, 7, actualEndX, 7, 2, 7) : getZigZagPath(0, 7, actualEndX, 7, 3, 8);
 
-                const strokeDash = config.lineStyle === 'dashed' ? 'stroke-dasharray="4,2"' : (config.lineStyle === 'dotted' ? 'stroke-dasharray="1,2"' : '');
+                const strokeDash = config.lineStyle === 'dashed' ? 'stroke-dasharray="4,2"' : (config.lineStyle === 'dotted' ? 'stroke-dasharray="1,2"' : (config.lineStyle === 'zigzag-soft' ? 'stroke-dasharray="4,2"' : ''));
                 const strokeW = config.lineStyle.startsWith('zigzag') ? "1.5" : "2";
 
                 let baseHtml = `<path d="${pathD}" stroke="${color}" stroke-width="${strokeW}" ${strokeDash} fill="none" />`;
@@ -1633,9 +1635,10 @@ export default function GenogramApp() {
     if (view === 'dashboard') {
         return (
             <div
-                className="h-screen flex flex-col transition-colors duration-300"
+                className={`h-screen flex flex-col transition-colors duration-300 ${currentTheme.stile ? 'tema-' + currentTheme.stile : ''}`}
                 // APPLICHIAMO LE VARIABILI CSS ANCHE QUI
                 style={{
+                    ...varsTema(currentTheme),
                     backgroundColor: currentTheme.colors.bgMain,
                     color: currentTheme.colors.text,
                     '--theme-bg-main': currentTheme.colors.bgMain,
@@ -1834,8 +1837,9 @@ export default function GenogramApp() {
 
     return (
         <div
-            className="h-screen flex flex-col overflow-hidden transition-colors duration-300 relative"
+            className={`h-screen flex flex-col overflow-hidden transition-colors duration-300 relative ${currentTheme.stile ? 'tema-' + currentTheme.stile : ''}`}
             style={{
+                ...varsTema(currentTheme),
                 backgroundColor: currentTheme.colors.bgMain,
                 color: currentTheme.colors.text,
                 '--theme-bg-main': currentTheme.colors.bgMain,
@@ -2103,7 +2107,7 @@ export default function GenogramApp() {
                                     const { d: pathD, cx } = geom;
 
                                     const isSel = selectedGroupIds.includes(g.id);
-                                    const gColor = (g.color === '#000000' && darkMode) ? '#ffffff' : g.color;
+                                    const gColor = tinta(g.color, (g.color === '#000000' && darkMode) ? '#ffffff' : g.color);
 
                                     // Label Pos logic
                                     const labelX = g.labelPos ? g.labelPos.x : cx;
@@ -2140,7 +2144,7 @@ export default function GenogramApp() {
                                                     }}
                                                 >
                                                     <rect x={-(g.label.length * 4) - 10} y="-12" width={(g.label.length * 8) + 20} height="24" fill={currentTheme.colors.bgPanel} fillOpacity="0.8" rx="4" stroke={isSel ? 'blue' : 'transparent'} />
-                                                    <text textAnchor="middle" dy="5" fill={gColor} className="text-xs font-bold uppercase select-none pointer-events-none">{g.label}</text>
+                                                    <text textAnchor="middle" dy="5" fill={gColor} className="geno-nucleo text-xs font-bold uppercase select-none pointer-events-none">{g.label}</text>
                                                 </g>
                                             )}
                                         </g>

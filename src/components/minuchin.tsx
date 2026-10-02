@@ -13,6 +13,7 @@ import { useState, useRef } from 'react';
 import { X, Plus, Trash2, Download, SeparatorVertical, SeparatorHorizontal, UserPlus, Eye, EyeOff, Columns } from 'lucide-react';
 import type { GenNode, RelationEdge, NodeGroup, Gender, StructuralMap, MinuchinRelation, MinuchinRelationType, BoundaryStyle } from '../types';
 import type { AppTheme } from '../config/themes';
+import { copiaTemaInSvg, notaInTestoSvg } from '../utils/tema';
 import { generateId } from '../utils/genogram';
 import { extractYear } from '../utils/dates';
 import { getZigZagPath } from '../utils/geometry';
@@ -396,6 +397,7 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
         const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
         clone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());
         clone.setAttribute('width', String(d.W * 2)); clone.setAttribute('height', String(d.H * 2));
+        copiaTemaInSvg(clone, svgRef.current); notaInTestoSvg(clone);
         const data = new XMLSerializer().serializeToString(clone);
         const img = new Image();
         const url = URL.createObjectURL(new Blob([data], { type: 'image/svg+xml;charset=utf-8' }));

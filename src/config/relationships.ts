@@ -3,7 +3,7 @@
 export type RelationshipConfig = {
     label: string;
     color: string;
-    lineStyle: 'solid' | 'dashed' | 'dotted' | 'zigzag' | 'zigzag-thick';
+    lineStyle: 'solid' | 'dashed' | 'dotted' | 'zigzag' | 'zigzag-thick' | 'zigzag-soft';
     renderType:
     | 'standard' | 'double' | 'triple' | 'triple-zigzag' | 'arrow' | 'arrow-open' | 'arrow-thick'
     | 'arrow-x-center' | 'arrow-box-center' | 'arrow-diamond-center' | 'arrow-double-bar-center'
@@ -57,6 +57,8 @@ export const BASE_REL_CONFIG: Record<string, RelationshipConfig> = {
     // 4. CONFLITTO E DISTANZA
     'distance': { label: 'Distanza', color: '#808080', lineStyle: 'dashed', renderType: 'standard' },
     'poor': { label: 'Povera', color: '#808080', lineStyle: 'dotted', renderType: 'standard' },
+    // Antipatia/disprezzo: negativa ma meno intensa di "Ostile" (zig-zag basso e tratteggiato)
+    'dislike': { label: 'Antipatia/Disprezzo', color: '#E8573F', lineStyle: 'zigzag-soft', renderType: 'standard' },
     'hostile': { label: 'Ostile', color: '#FF0000', lineStyle: 'zigzag', renderType: 'standard' },
     'close-hostile': { label: 'Vicini-Ostile', color: '#FF0000', lineStyle: 'solid', renderType: 'triple-zigzag-center' },
     'fusion-hostile': { label: 'Fusione & Conflitto', color: '#000000', lineStyle: 'solid', renderType: 'fusion-hostile' },
@@ -138,7 +140,7 @@ export const RELATION_CATEGORIES: Record<string, string[]> = {
         'twin-dizygotic', 'twin-monozygotic', 'twin-unknown', 'pregnancy'],
     "Interazione / Affettive": ['correlated', 'harmony', 'friendship', 'best-friend', 'close', 'fusion', 'in-love', 'fan', 'spiritual',
         'ambivalent', 'parentified', 'confidant', 'mentor', 'dependency', 'idealization', 'rivalry'],
-    "Conflitto e Distanza": ['distance', 'poor', 'hostile', 'close-hostile', 'fusion-hostile', 'hate', 'cutoff', 'restored',
+    "Conflitto e Distanza": ['distance', 'poor', 'dislike', 'hostile', 'close-hostile', 'fusion-hostile', 'hate', 'cutoff', 'restored',
         'indifferent', 'mistrust', 'contempt', 'betrayal'],
     "Violenza, Abuso e Potere": [
         'violence-psychological', 'violence-physical', 'violence-sexual',
