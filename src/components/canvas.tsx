@@ -4,7 +4,7 @@ import { Plus, ChevronDown, Heart, Users, Waypoints } from 'lucide-react';
 import type { GenNode, RelationEdge, StickyNoteData } from '../types';
 import { BASE_REL_CONFIG, RELATION_CATEGORIES } from '../config/relationships';
 import { NODE_WIDTH, NODE_HEIGHT, NODE_RADIUS } from '../config/constants';
-import { parseDate, calculateAge, calculateAgeAtDeath } from '../utils/dates';
+import { parseDate, calculateAge, calculateAgeAtDeath, annoMorte } from '../utils/dates';
 import { getMarriageBarY } from '../utils/genogram';
 import { getZigZagPath } from '../utils/geometry';
 
@@ -707,6 +707,9 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
         }
     }
 
+    const deathYear = node.deceased ? annoMorte(node.deathDate) : '';
+    const extraY = deathYear ? 16 : 0;
+
     const onH = (e: any, action: string) => {
         e.stopPropagation(); e.preventDefault();
 
@@ -780,8 +783,15 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
                 </text>
             )}
 
-            {node.label && <TextLabel y={h + 14} text={node.label} size={9} />}
-            {node.profession && <TextLabel y={h + (node.label ? 26 : 14)} text={node.profession} size={8} />}
+            {/* Deceduti: croce e anno di morte sotto il simbolo, dove la X non copre niente */}
+            {deathYear && (
+                <g pointerEvents="none" className="geno-morte">
+                    <rect x={w / 2 - 22} y={h + 4} width={44} height={15} rx={3} fill={textBg} fillOpacity={0.9} />
+                    <text x={w / 2} y={h + 12} dominantBaseline="middle" textAnchor="middle" fill={textColor} className="geno-testo select-none" style={{ fontSize: 11, fontWeight: 700 }}>† {deathYear}</text>
+                </g>
+            )}
+            {node.label && <TextLabel y={h + 14 + extraY} text={node.label} size={9} />}
+            {node.profession && <TextLabel y={h + (node.label ? 26 : 14) + extraY} text={node.profession} size={8} />}
 
             {node.notes && node.notes.length > 0 && <circle cx={w + 5} cy={0} r={4} fill="var(--geno-rosso, #ef4444)" stroke={textBg} strokeWidth={1} />}
 

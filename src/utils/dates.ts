@@ -51,3 +51,12 @@ export const extractYear = (text: string): number => {
     if (match) return parseInt(match[0]);
     return 0;
 };
+
+/** L'anno di morte da mostrare accanto alla croce: da "2010", "3/5/2010", "3-5-10". */
+export const annoMorte = (str?: string): string => {
+    if (!str) return '';
+    const quattro = str.match(/(\d{4})(?!.*\d{4})/);
+    if (quattro) return quattro[1];
+    if (str.split(/[\/\-\.]/).length === 3) { const d = parseDate(str); if (d && !isNaN(d.getTime())) return String(d.getFullYear()); }
+    return '';
+};
