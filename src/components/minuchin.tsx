@@ -15,7 +15,7 @@ import type { GenNode, RelationEdge, NodeGroup, Gender, StructuralMap, MinuchinR
 import type { AppTheme } from '../config/themes';
 import { copiaTemaInSvg, notaInTestoSvg } from '../utils/tema';
 import { generateId } from '../utils/genogram';
-import { extractYear } from '../utils/dates';
+import { extractYear, annoMorte } from '../utils/dates';
 import { getZigZagPath } from '../utils/geometry';
 import { NODE_WIDTH, NODE_HEIGHT } from '../config/constants';
 import { PersonSymbol } from './canvas';
@@ -69,6 +69,13 @@ const TOOLS: { key: MinuchinRelationType, label: string, needsThird: boolean }[]
 
 const BOUNDARY_CYCLE: BoundaryStyle[] = ['clear', 'diffuse', 'rigid', 'none'];
 const BOUNDARY_LABEL: Record<BoundaryStyle, string> = { clear: 'chiaro', diffuse: 'diffuso', rigid: 'rigido', none: 'nessuno' };
+// Aggancio: al valore più vicino entro SOGLIA (con guida), altrimenti alla griglia di PASSO
+const SOGLIA = 8, PASSO = 10;
+export const aggancia = (v: number, punti: number[]): { v: number, guida?: number } => {
+    let migliore: number | undefined, dist = SOGLIA;
+    for (const q of punti) { const dd = Math.abs(q - v); if (dd <= dist) { dist = dd; migliore = q; } }
+    return migliore !== undefined ? { v: migliore, guida: migliore } : { v: Math.round(v / PASSO) * PASSO };
+};
 const boundaryDash = (b: BoundaryStyle) => b === 'clear' ? '12,7' : b === 'diffuse' ? '2,5' : undefined;
 
 const RelPreview = ({ type, stroke }: { type: MinuchinRelationType, stroke: string }) => (
@@ -261,6 +268,9 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
     const [newGender, setNewGender] = useState<Gender>('F');
     const svgRef = useRef<SVGSVGElement>(null);
     const dragRef = useRef<{ kind: 'member' | 'vb' | 'hb', id: string, offX: number, offY: number, moved: boolean } | null>(null);
+    // Aggancio: allineamento agli altri membri (e ai confini) con le guide, altrimenti a una griglia fine.
+    // Tenendo premuto Alt si sposta libero.
+    const [guide, setGuide] = useState<{ x?: number, y?: number }>({});
 
     const c = theme.colors;
     const stroke = c.text, muted = c.textMuted, accent = c.accent;
@@ -352,24 +362,47 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
         if (!dr) return;
         const p = svgPoint(e);
         dr.moved = true;
+        const libero = e.altKey;
+        const altri = Object.entries(m.positions).filter(([id]) => id !== dr.id && m.memberIds.includes(id));
+        const xs = [...altri.map(([, q]) => q.x), ...(dr.kind === 'member' ? [] : [d.W / 2])];
+        const ys = altri.map(([, q]) => memberCY(m, q));
         if (dr.kind === 'member') {
-            const x = Math.max(d.sym, Math.min(d.W - d.sym, p.x - dr.offX));
+            const sx = libero ? { v: p.x - dr.offX } : aggancia(p.x - dr.offX, xs);
+            const x = Math.max(d.sym, Math.min(d.W - d.sym, sx.v));
             if (isMin) {
-                const y = Math.max(d.sym, Math.min(d.H - d.sym, p.y - dr.offY));
+                const sy = libero ? { v: p.y - dr.offY } : aggancia(p.y - dr.offY, ys);
+                const y = Math.max(d.sym, Math.min(d.H - d.sym, sy.v));
+                setGuide({ x: sx.guida, y: sy.guida });
                 setM(prev => ({ ...prev, positions: { ...prev.positions, [dr.id]: { ...prev.positions[dr.id], x, y } } }));
             } else {
                 const level = Math.max(0, Math.min(LEVELS - 1, Math.floor((p.y - 14) / DIMS.grid.band)));
+                setGuide({ x: sx.guida });
                 setM(prev => ({ ...prev, positions: { ...prev.positions, [dr.id]: { x, level } } }));
             }
         } else if (dr.kind === 'vb') {
-            const x = Math.max(20, Math.min(d.W - 20, p.x - dr.offX));
+            // un confine verticale si aggancia a metà tra due membri vicini, o al centro
+            const ordinati = altri.map(([, q]) => q.x).sort((a, b) => a - b);
+            const meta = ordinati.slice(1).map((v, i) => (v + ordinati[i]) / 2);
+            const sx = libero ? { v: p.x - dr.offX } : aggancia(p.x - dr.offX, [...meta, d.W / 2]);
+            const x = Math.max(20, Math.min(d.W - 20, sx.v));
+            setGuide({});
             setM(prev => ({ ...prev, vBoundaries: (prev.vBoundaries || []).map(v => v.id === dr.id ? { ...v, x } : v) }));
         } else {
-            const y = Math.max(20, Math.min(d.H - 20, p.y - dr.offY));
+            const ordinati = ys.sort((a, b) => a - b);
+            const meta = ordinati.slice(1).map((v, i) => (v + ordinati[i]) / 2);
+            const sy = libero ? { v: p.y - dr.offY } : aggancia(p.y - dr.offY, [...meta, d.H / 2]);
+            const y = Math.max(20, Math.min(d.H - 20, sy.v));
+            setGuide({});
             setM(prev => ({ ...prev, hBoundaries: (prev.hBoundaries || []).map(v => v.id === dr.id ? { ...v, y } : v) }));
         }
     };
-    const onUp = () => { setTimeout(() => { dragRef.current = null; }, 0); };
+    const onUp = () => { setGuide({}); setTimeout(() => { dragRef.current = null; }, 0); };
+    // persone del genogramma non ancora nella mappa
+    const fuori = nodes.filter(n => !m.memberIds.includes(n.id)).sort((a, b) => a.name.localeCompare(b.name, 'it'));
+    const togliDallaMappa = (id: string) => setM(prev => {
+        const positions = { ...prev.positions }; delete positions[id];
+        return { ...prev, memberIds: prev.memberIds.filter(x => x !== id), positions, relations: prev.relations.filter(r => r.fromId !== id && r.toId !== id && r.thirdId !== id) };
+    });
 
     const cycleGridBoundary = (level: number) => setM(prev => {
         const cur = prev.boundaries[level] ?? 'none';
@@ -457,7 +490,7 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
                             <SeparatorHorizontal size={14} />
                         </button>
                     )}
-                    {onCreatePerson && (
+                    {(onCreatePerson || fuori.length > 0) && (
                         <button onClick={() => setAddingPerson(!addingPerson)} className="px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 hover:opacity-80" style={toolBtn(addingPerson)}>
                             <UserPlus size={14} /> Persona
                         </button>
@@ -470,9 +503,20 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
                 </div>
 
                 {/* Form nuova persona */}
-                {addingPerson && (
+                {addingPerson && fuori.length > 0 && (
+                    <div className="px-4 py-2.5 flex flex-wrap items-center gap-1.5 border-b text-xs" style={{ borderColor: c.border, backgroundColor: c.bgMain }} data-testid="minuchin-esistenti">
+                        <span className="font-semibold mr-1" style={{ color: muted }}>Dal genogramma:</span>
+                        {fuori.map(n => (
+                            <button key={n.id} onClick={() => addMemberToMap(n.id)} className="pl-1.5 pr-2.5 py-1 rounded-full border flex items-center gap-1.5 hover:opacity-80" style={{ color: c.text, borderColor: c.border }} title={`Aggiungi ${n.name} alla mappa`}>
+                                <svg width={14} height={14} viewBox={`0 0 ${NODE_WIDTH} ${NODE_HEIGHT}`}><PersonSymbol node={n} darkMode={darkMode} /></svg>{n.name}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {addingPerson && onCreatePerson && (
                     <div className="px-4 py-2.5 flex flex-wrap items-center gap-2 border-b text-xs" style={{ borderColor: c.border, backgroundColor: c.bgMain }}>
-                        <input autoFocus className="border rounded-lg px-2.5 py-1.5 bg-transparent focus:outline-none w-48" style={{ borderColor: c.border, color: c.text }}
+                        <span className="font-semibold mr-1" style={{ color: muted }}>Nuova:</span>
+                        <input autoFocus={fuori.length === 0} className="border rounded-lg px-2.5 py-1.5 bg-transparent focus:outline-none w-48" style={{ borderColor: c.border, color: c.text }}
                             placeholder="Nome" value={newName} onChange={e => setNewName(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') submitNewPerson(); }} />
                         {(['M', 'F', 'NonBinary', 'Unknown'] as Gender[]).map(g => (
@@ -555,6 +599,10 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
                                 onClick={() => { setSelectedRel(selectedRel === r.id ? null : r.id); setTool(null); setPending([]); }} />
                         ))}
 
+                        {/* Guide di allineamento durante il trascinamento */}
+                        {guide.x !== undefined && <line data-ui="1" x1={guide.x} y1={0} x2={guide.x} y2={d.H} stroke={accent} strokeWidth={1} strokeDasharray="3,3" opacity={0.8} />}
+                        {guide.y !== undefined && <line data-ui="1" x1={0} y1={guide.y} x2={d.W} y2={guide.y} stroke={accent} strokeWidth={1} strokeDasharray="3,3" opacity={0.8} />}
+
                         {/* Membri */}
                         {members.map(n => {
                             const p = pos(n.id);
@@ -574,7 +622,16 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
                                     <text y={d.sym / 2 + 13} textAnchor="middle" fontSize={isMin ? 9.5 : 10.5} fontWeight={600} fill={stroke}>
                                         {n.name.length > 14 ? n.name.slice(0, 13) + '…' : n.name}
                                     </text>
-                                    {!isMin && n.profession && <text y={d.sym / 2 + 24} textAnchor="middle" fontSize={8} fill={muted}>{n.profession}</text>}
+                                    {n.deceased && annoMorte(n.deathDate) && <text y={d.sym / 2 + (isMin ? 23 : 24)} textAnchor="middle" fontSize={8.5} fontWeight={700} fill={stroke}>† {annoMorte(n.deathDate)}</text>}
+                                    {!isMin && n.profession && <text y={d.sym / 2 + (n.deceased && annoMorte(n.deathDate) ? 35 : 24)} textAnchor="middle" fontSize={8} fill={muted}>{n.profession}</text>}
+                                    {!tool && (
+                                        <g data-ui="1" className="minuchin-togli cursor-pointer" transform={`translate(${d.sym / 2 + 6},${-d.sym / 2 - 2})`}
+                                            onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); togliDallaMappa(n.id); }}>
+                                            <title>Togli dalla mappa</title>
+                                            <circle r={6} fill={c.bgPanel} stroke={muted} strokeWidth={0.8} />
+                                            <path d="M -2.2 -2.2 L 2.2 2.2 M 2.2 -2.2 L -2.2 2.2" stroke={c.text} strokeWidth={1.2} />
+                                        </g>
+                                    )}
                                 </g>
                             );
                         })}
@@ -586,7 +643,7 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
                         <span className="flex items-center gap-1.5"><svg width={34} height={14}><line x1={2} y1={7} x2={32} y2={7} stroke={muted} strokeWidth={1.5} strokeDasharray="8,5" /></svg>Confine chiaro</span>
                         <span className="flex items-center gap-1.5"><svg width={34} height={14}><line x1={2} y1={7} x2={32} y2={7} stroke={muted} strokeWidth={1.5} strokeDasharray="2,4" /></svg>Diffuso</span>
                         <span className="flex items-center gap-1.5"><svg width={34} height={14}><line x1={2} y1={7} x2={32} y2={7} stroke={muted} strokeWidth={2.4} /></svg>Rigido</span>
-                        <span className="italic">Clicca un tratto di confine (tra due incroci) per cambiarne stile — spegnendolo lo accorci.</span>
+                        <span className="italic">Clicca un tratto di confine (tra due incroci) per cambiarne stile — spegnendolo lo accorci. Trascinando, persone e confini si allineano da soli (Alt per spostare libero).</span>
                     </div>
                 </div>
             </div>

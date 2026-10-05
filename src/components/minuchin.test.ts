@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { segmentsOf } from './minuchin';
+import { segmentsOf, aggancia } from './minuchin';
+import { annoMorte } from '../utils/dates';
 import type { StructuralMap } from '../types';
 
 const baseMap = (over: Partial<StructuralMap>): StructuralMap => ({
@@ -47,5 +48,23 @@ describe('segmentazione confini Minuchin', () => {
         });
         const segs = segmentsOf(m, 'vb', m.vBoundaries![0], W, H);
         expect(segs.map(s => [s.a, s.b])).toEqual([[8, 200], [200, H - 8]]);
+    });
+});
+
+describe('aggancia', () => {
+    it('si allinea a un punto vicino e lo segnala come guida', () => {
+        expect(aggancia(103, [100, 200])).toEqual({ v: 100, guida: 100 });
+    });
+    it('lontano dai punti va sulla griglia', () => {
+        expect(aggancia(146, [100, 200])).toEqual({ v: 150 });
+    });
+});
+describe('annoMorte', () => {
+    it('legge anno, data e data a due cifre', () => {
+        expect(annoMorte('2010')).toBe('2010');
+        expect(annoMorte('3/5/2010')).toBe('2010');
+        expect(annoMorte('3-5-98')).toBe('1998');
+        expect(annoMorte('')).toBe('');
+        expect(annoMorte('35')).toBe('');
     });
 });
