@@ -33,6 +33,15 @@ const makeImage = `(() => {
     sq(...P.zio); sq(...P.padre); ci(...P.zia); ci(...P.madre);
     sq(...P.n1); ci(...P.n2);
 
+    // nomi sotto e anni sopra, come li scrive qualunque software
+    x.fillStyle = '#111'; x.textAlign = 'center';
+    const NAMES = { nonno: 'Aldo', nonna: 'Berta', zio: 'Carlo', padre: 'Dario', zia: 'Elsa', madre: 'Fiona', n1: 'Guido', n2: 'Ilaria' };
+    const YEARS = { nonno: '1940', nonna: '1942', padre: '1968', madre: '1971' };
+    x.font = '15px Arial';
+    Object.entries(NAMES).forEach(([k, v]) => x.fillText(v, P[k][0], P[k][1] + R + 16));
+    x.font = '14px Arial';
+    Object.entries(YEARS).forEach(([k, v]) => x.fillText(v, P[k][0], P[k][1] - R - 7));
+
     // nonni: barra di coppia e discendenza
     seg(P.nonno[0], P.nonno[1] + R, P.nonno[0], 130);
     seg(P.nonna[0], P.nonna[1] + R, P.nonna[0], 130);
@@ -91,6 +100,23 @@ const makeImage = `(() => {
     ok(+unions === 2, `2 unioni riconosciute (trovate ${unions})`);
     ok(+children === 10, `10 legami genitore-figlio (trovati ${children})`);
 
+    // --- lettura delle scritte ---
+    await page.click('button:has-text("Recupera nomi ed età")');
+    await page.waitForSelector('button:has-text("Rileggi")', { timeout: 300000 });
+    await page.waitForTimeout(300);
+    const read = (await page.locator('div[title]').allInnerTexts()).filter(t => /^\d+\./.test(t)).join(' | ');
+    console.log('   letto: ' + read.replace(/\n/g, ' '));
+    // La soglia è bassa di proposito: qui le linee di discendenza passano
+    // DENTRO ai nomi (nessun riquadro di sfondo a interromperle), che è il
+    // caso peggiore per il riconoscimento — lettere e linea diventano un
+    // tratto solo. Sui genogrammi veri, dove l'etichetta ha il suo sfondo, la
+    // resa è molto più alta. Serve a sorvegliare le regressioni, non a
+    // misurare la qualità.
+    const names = ['Aldo', 'Berta', 'Carlo', 'Dario', 'Elsa', 'Fiona', 'Guido', 'Ilaria'].filter(n => read.includes(n));
+    ok(names.length >= 4, `almeno 4 nomi su 8 riconosciuti (${names.length}: ${names.join(',')})`);
+    const years = ['1940', '1942', '1968', '1971'].filter(y => read.includes(y));
+    ok(years.length >= 3, `almeno 3 anni su 4 riconosciuti (${years.length})`);
+
     await page.click('button:has-text("Importa 8 persone")');
     await page.waitForTimeout(2200);   // l'autosalvataggio è ritardato di 1.5s
 
@@ -108,11 +134,18 @@ const makeImage = `(() => {
         const raw = Object.keys(localStorage).filter(k => k.startsWith('genopro_data_'));
         if (!raw.length) return null;
         const d = JSON.parse(localStorage.getItem(raw[raw.length - 1])).data;
-        return { nodes: d.nodes.length, edges: d.edges.length, types: [...new Set(d.edges.map(e => e.type))].sort() };
+        return {
+            nodes: d.nodes.length, edges: d.edges.length,
+            types: [...new Set(d.edges.map(e => e.type))].sort(),
+            named: d.nodes.filter(n => n.name && !/^Persona /.test(n.name)).length,
+            dated: d.nodes.filter(n => n.birthDate).length,
+        };
     });
     ok(rel && rel.nodes === 8, `8 persone salvate (${rel && rel.nodes})`);
     ok(rel && rel.edges === 12, `12 relazioni salvate (${rel && rel.edges})`);
     ok(rel && rel.types.join(',') === 'child-bio,marriage', `tipi neutri attesi (${rel && rel.types.join(',')})`);
+    ok(rel && rel.named >= 4, `i nomi letti finiscono sulle persone (${rel && rel.named})`);
+    ok(rel && rel.dated >= 3, `gli anni letti finiscono nelle date di nascita (${rel && rel.dated})`);
 
     // annullare deve riportare indietro l'import intero, non una persona
     await page.keyboard.press('Control+z');

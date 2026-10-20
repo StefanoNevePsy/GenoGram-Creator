@@ -51,14 +51,25 @@ export interface DetectOptions {
     debug?: boolean;         // restituisce le maschere intermedie (solo per i test)
 }
 
+/** Un'etichetta scritta, già attribuita alla persona a cui appartiene. */
+export interface DetectedText {
+    x0: number; y0: number; x1: number; y1: number;
+    /** indice in people, -1 se non è vicina a nessuno */
+    person: number;
+    /** sopra il simbolo = anno di nascita, sotto = nome (convenzione diffusa) */
+    slot: 'above' | 'below';
+}
+
 export interface AnalyzeResult {
     people: DetectedPerson[];
     links: DetectedLink[];
+    /** riquadri delle scritte: servono a leggerle, non a disegnarle */
+    texts: DetectedText[];
     threshold: number;
     /** buchi scartati perché troppo piccoli/grandi: utile per tarare la soglia */
     rejected: number;
     width: number; height: number;
-    debug?: { compId: Int32Array; owner: Int32Array; line: Uint8Array; frames: Blob[] };
+    debug?: { compId: Int32Array; owner: Int32Array; line: Uint8Array; frames: Blob[]; words: Blob[] };
 }
 
 // --- soglia automatica di Otsu sul canale di luminanza ---
@@ -259,13 +270,15 @@ const stripFrames = (
 };
 
 const stripTextLabels = (
-    line: Uint8Array, W: number, H: number, owner: Int32Array,
+    line: Uint8Array, W: number, H: number, touching: Uint8Array,
     medSide: number, strokeW: number
 ): Blob[] => {
     const N = W * H;
     const { id, count } = labelComponents(line, W, H);
+    const sm = strokeMap(line, W, H);
     const bb: (Blob | undefined)[] = new Array(count + 1);
     const area = new Int32Array(count + 1);
+    const thickSum = new Float64Array(count + 1);
     const anchored = new Uint8Array(count + 1);   // tocca l'alone di un simbolo
     for (let i = 0; i < N; i++) {
         const c = id[i];
@@ -275,7 +288,8 @@ const stripTextLabels = (
         if (!e) bb[c] = { x0: x, y0: y, x1: x, y1: y };
         else { if (x < e.x0) e.x0 = x; if (x > e.x1) e.x1 = x; if (y < e.y0) e.y0 = y; if (y > e.y1) e.y1 = y; }
         area[c]++;
-        if (owner[i]) anchored[c] = 1;
+        thickSum[c] += sm[i];
+        if (touching[i]) anchored[c] = 1;
     }
 
     // Un connettore parte da un simbolo ed è sottile quanto il tratto lungo
@@ -290,7 +304,14 @@ const stripTextLabels = (
         const w = b.x1 - b.x0 + 1, h = b.y1 - b.y0 + 1;
         const density = area[c] / (w * h);
         const aspect = Math.max(w, h) / Math.min(w, h);
-        if (density < 0.22 || Math.min(w, h) < strokeW * 2.2) continue;
+        // Lo spessore di confronto è quello del blob STESSO, non del disegno:
+        // in molti genogrammi le linee di parentela sono molto più marcate
+        // delle scritte, e una soglia unica o scarta tutte le etichette o
+        // scambia per etichetta i segmenti di un tratteggio. Una parola è
+        // alta parecchie volte l'asta delle sue lettere; un pezzo di linea è
+        // spesso quanto la penna che l'ha tracciata.
+        const thick = Math.max(1, thickSum[c] / area[c]);
+        if (density < 0.20 || Math.min(w, h) < thick * 2.2) continue;
         const glyph = Math.max(w, h) <= medSide * 1.6;
         const textLine = aspect >= 2.2 && Math.min(w, h) <= medSide;
         if (glyph || textLine) { isText[c] = 1; textIds.push(c); }
@@ -337,7 +358,10 @@ const stripTextLabels = (
 // verticale è lo spessore locale; la mediana è quello del disegno. Vale sia
 // per una stampa a 1px sia per un pennarello su carta, e tutte le soglie che
 // separano un tratto da un glifo ne dipendono.
-const estimateStrokeWidth = (mask: Uint8Array, W: number, H: number, fallback: number): number => {
+// Spessore locale del tratto, pixel per pixel: il minimo fra la lunghezza
+// della corsa orizzontale e quella verticale. Su una linea dà la larghezza
+// della penna, su un glifo quella dell'asta.
+const strokeMap = (mask: Uint8Array, W: number, H: number): Int32Array => {
     const N = W * H;
     const hRun = new Int32Array(N), vRun = new Int32Array(N);
     for (let y = 0; y < H; y++) {
@@ -348,6 +372,7 @@ const estimateStrokeWidth = (mask: Uint8Array, W: number, H: number, fallback: n
             else if (!on && s >= 0) { for (let k = s; k < x; k++) hRun[y * W + k] = x - s; s = -1; }
         }
     }
+    const out = new Int32Array(N);
     for (let x = 0; x < W; x++) {
         let s = -1;
         for (let y = 0; y <= H; y++) {
@@ -356,12 +381,20 @@ const estimateStrokeWidth = (mask: Uint8Array, W: number, H: number, fallback: n
             else if (!on && s >= 0) { for (let k = s; k < y; k++) vRun[k * W + x] = y - s; s = -1; }
         }
     }
+    for (let i = 0; i < N; i++) if (mask[i]) out[i] = Math.min(hRun[i], vRun[i]);
+    return out;
+};
+
+// Spessore del disegno nel suo complesso: mediana degli spessori locali.
+// Misurato invece che indovinato, vale sia per una stampa a 1px sia per un
+// pennarello su carta.
+const estimateStrokeWidth = (mask: Uint8Array, W: number, H: number, fallback: number): number => {
+    const sm = strokeMap(mask, W, H);
     const hist = new Int32Array(64);
     let n = 0;
-    for (let i = 0; i < N; i++) {
+    for (let i = 0; i < sm.length; i++) {
         if (!mask[i]) continue;
-        const v = Math.min(hRun[i], vRun[i], 63);
-        hist[v]++; n++;
+        hist[Math.min(sm[i], 63)]++; n++;
     }
     if (n === 0) return fallback;
     let acc = 0;
@@ -652,38 +685,103 @@ const medianSide = (people: DetectedPerson[]): number => {
 const findLinks = (
     ink: Uint8Array, data: Uint8ClampedArray, W: number, H: number,
     people: DetectedPerson[], frames: Blob[], opts: DetectOptions, strokeW: number
-): { links: DetectedLink[]; debug?: { compId: Int32Array; owner: Int32Array; line: Uint8Array; frames: Blob[] } } => {
-    if (people.length < 2) return { links: [] };
+): { links: DetectedLink[]; texts: DetectedText[]; debug?: { compId: Int32Array; owner: Int32Array; line: Uint8Array; frames: Blob[]; words: Blob[] } } => {
+    if (people.length < 2) return { links: [], texts: [] };
     const N = W * H;
     const medSide = medianSide(people) || 20;
     // w/h sono le misure del BUCO: per cancellare anche il contorno del simbolo
     // serve allargare di un tratto abbondante, altrimenti i suoi due fianchi
     // restano in maschera e fanno da ponte attorno al simbolo, ricucendo la
     // linea che scende da sopra con quella che riparte da sotto.
-    const clearPad = Math.max(2, Math.ceil(strokeW * 1.8));
+    // ...ma non oltre una frazione del simbolo: dove le linee di parentela
+    // sono molto più marcate del contorno, un margine proporzionale a quelle
+    // inghiottirebbe le etichette scritte appena sotto.
     const reach = Math.max(3, Math.round(medSide * 0.22));
+
+    // Quanto è spesso il contorno di QUESTO simbolo: si esce dal buco in
+    // quattro direzioni e si conta per quanti pixel l'inchiostro continua.
+    // w/h del rilevamento sono le misure dell'INTERNO: se si cancella solo
+    // quello, i fianchi del contorno restano in maschera e fanno da ponte
+    // attorno al simbolo, ricucendo la linea che scende da sopra con quella
+    // che riparte da sotto — e tre generazioni diventano una famiglia sola.
+    // Misurarlo, invece di dedurlo dal tratto medio del disegno, evita sia di
+    // lasciarne un pezzo sia di allargarsi tanto da inghiottire le etichette.
+    const outlineOf = (p: DetectedPerson): number => {
+        const x0 = Math.round(p.cx - p.w / 2), y0 = Math.round(p.cy - p.h / 2);
+        const x1 = Math.round(p.cx + p.w / 2), y1 = Math.round(p.cy + p.h / 2);
+        const cap = Math.max(3, Math.round(medSide * 0.4));
+        const run = (sx: number, sy: number, dx: number, dy: number) => {
+            let t = 0, x = sx, y = sy;
+            while (t < cap) {
+                x += dx; y += dy;
+                if (x < 0 || y < 0 || x >= W || y >= H || !ink[y * W + x]) break;
+                t++;
+            }
+            return t;
+        };
+        const got: number[] = [];
+        for (const f of [0.3, 0.5, 0.7]) {
+            const mx = Math.round(x0 + (x1 - x0) * f), my = Math.round(y0 + (y1 - y0) * f);
+            [run(mx, y0, 0, -1), run(mx, y1, 0, 1), run(x0, my, -1, 0), run(x1, my, 1, 0)]
+                .forEach(t => { if (t > 0) got.push(t); });
+        }
+        if (!got.length) return 2;
+        got.sort((a, b) => a - b);
+        return got[got.length >> 1];
+    };
+    const pads = people.map(p => Math.max(2, Math.min(outlineOf(p) + 1, Math.round(medSide * 0.45))));
 
     // owner[i] = indice persona + 1, nell'alone attorno al simbolo.
     // Il simbolo viene tolto dalla maschera: le linee restano tronche sul suo
     // bordo, quindi "toccare l'alone" significa "arrivare al simbolo".
+    // `touching` è l'anello stretto appena fuori dal simbolo: una linea che vi
+    // arriva lo tocca davvero, mentre l'alone largo di `owner` — che serve ad
+    // agganciare i connettori — arriverebbe a coprire anche il nome scritto
+    // sotto, e proteggerlo dalla rimozione del testo significa non trovarlo
+    // più quando si va a leggerlo.
     const owner = new Int32Array(N);
+    const touching = new Uint8Array(N);
+    const inner = Math.max(2, Math.round(medSide * 0.08));
     const line = new Uint8Array(ink);
     people.forEach((p, i) => {
+        const pad = pads[i];
         const x0 = Math.round(p.cx - p.w / 2), y0 = Math.round(p.cy - p.h / 2);
         const x1 = Math.round(p.cx + p.w / 2), y1 = Math.round(p.cy + p.h / 2);
-        for (let y = y0 - clearPad - reach; y <= y1 + clearPad + reach; y++) {
+        for (let y = y0 - pad - reach; y <= y1 + pad + reach; y++) {
             if (y < 0 || y >= H) continue;
-            for (let x = x0 - clearPad - reach; x <= x1 + clearPad + reach; x++) {
+            for (let x = x0 - pad - reach; x <= x1 + pad + reach; x++) {
                 if (x < 0 || x >= W) continue;
                 const k = y * W + x;
-                if (x >= x0 - clearPad && x <= x1 + clearPad && y >= y0 - clearPad && y <= y1 + clearPad) line[k] = 0;
-                else if (!owner[k]) owner[k] = i + 1;
+                if (x >= x0 - pad && x <= x1 + pad && y >= y0 - pad && y <= y1 + pad) line[k] = 0;
+                else {
+                    if (!owner[k]) owner[k] = i + 1;
+                    if (x >= x0 - pad - inner && x <= x1 + pad + inner
+                        && y >= y0 - pad - inner && y <= y1 + pad + inner) touching[k] = 1;
+                }
             }
         }
     });
 
     stripFrames(line, W, H, frames, medSide, strokeW);
-    stripTextLabels(line, W, H, owner, medSide, strokeW);
+    const words = stripTextLabels(line, W, H, touching, medSide, strokeW);
+
+    // Attribuisci ogni scritta alla persona cui si riferisce. La convenzione
+    // dei genogrammi è costante: l'anno di nascita sopra il simbolo, il nome
+    // sotto. L'età, quando c'è, sta DENTRO — e lì non serve cercarla: il
+    // riquadro del simbolo la delimita già.
+    const texts: DetectedText[] = words.map(wd => {
+        const cx = (wd.x0 + wd.x1) / 2, cy = (wd.y0 + wd.y1) / 2;
+        let person = -1, bestD = Infinity, slot: 'above' | 'below' = 'below';
+        people.forEach((p, i) => {
+            // dev'essere allineata in orizzontale e abbastanza vicina in verticale
+            if (Math.abs(cx - p.cx) > Math.max(p.w, wd.x1 - wd.x0) * 1.1) return;
+            const above = cy < p.cy;
+            const d = above ? p.cy - p.h / 2 - wd.y1 : wd.y0 - (p.cy + p.h / 2);
+            if (d < 0 || d > medSide * 1.4 || d >= bestD) return;
+            bestD = d; person = i; slot = above ? 'above' : 'below';
+        });
+        return { ...wd, person, slot };
+    }).filter(t => t.person >= 0);
 
     // Le componenti grezze servono a riconoscere i tratteggi: un tratteggio è
     // una sola componente dopo la chiusura, ma molti frammenti corti prima.
@@ -782,15 +880,15 @@ const findLinks = (
         }
     });
 
-    return { links, debug: opts.debug ? { compId: comp.id, owner, line, frames } : undefined };
+    return { links, texts, debug: opts.debug ? { compId: comp.id, owner, line, frames, words } : undefined };
 };
 
 export const analyzeGenogramImage = (img: ImageLike, opts: DetectOptions = {}): AnalyzeResult => {
     const { width, height } = img;
     const { ink, threshold, strokeW } = prepare(img, opts);
     const { people, rejected, frames } = findPeople(ink, width, height, opts, strokeW);
-    const { links, debug } = findLinks(ink, img.data, width, height, people, frames, opts, strokeW);
-    return { people, links, threshold, rejected, width, height, debug };
+    const { links, texts, debug } = findLinks(ink, img.data, width, height, people, frames, opts, strokeW);
+    return { people, links, texts, threshold, rejected, width, height, debug };
 };
 
 // --- TARATURA AUTOMATICA ---
@@ -809,10 +907,17 @@ const scoreResult = (r: AnalyzeResult): number => {
     const linked = new Set<number>();
     r.links.forEach(l => { linked.add(l.a); linked.add(l.b); });
 
-    // Conta solo chi è davvero una persona: forma netta e almeno un legame.
-    // Contare le teste e basta premierebbe i parametri che inventano buchi —
-    // quelli fra una lettera e l'altra sono tanti e non li collega nessuno.
-    const good = r.people.filter((p, i) => p.confidence >= 0.6 && linked.has(i)).length;
+    // Conta solo chi è davvero una persona: forma netta, almeno un legame e
+    // nessun altro simbolo addosso. Contare le teste e basta premierebbe i
+    // parametri che inventano buchi — fra una lettera e l'altra ce ne sono
+    // tanti, e si piazzano a ridosso del simbolo che l'etichetta descrive,
+    // mentre in un genogramma vero due simboli non si toccano mai.
+    const med = medianSide(r.people) || 1;
+    const crowded = (i: number) => r.people.some((q, j) =>
+        j !== i && Math.hypot(q.cx - r.people[i].cx, q.cy - r.people[i].cy) < med * 0.85);
+    // La soglia di confidenza è alta apposta: un simbolo vero ha i due
+    // indizi di forma concordi, uno spazio fra due lettere quasi mai.
+    const good = r.people.filter((p, i) => p.confidence >= 0.8 && linked.has(i) && !crowded(i)).length;
 
     const sides = r.people.map(p => (p.w + p.h) / 2);
     const mean = sides.reduce((a, b) => a + b, 0) / n;
@@ -868,7 +973,7 @@ export const autoAnalyzeGenogramImage = (img: ImageLike, base: DetectOptions = {
 
     const result = best as AnalyzeResult | null;
     if (!result) {
-        return { people: [], links: [], threshold: 0, rejected: 0, width: img.width, height: img.height, options: bestOpts, score: 0, attempts };
+        return { people: [], links: [], texts: [], threshold: 0, rejected: 0, width: img.width, height: img.height, options: bestOpts, score: 0, attempts };
     }
     return { ...result, options: bestOpts, score: Math.round(bestScore * 10) / 10, attempts };
 };

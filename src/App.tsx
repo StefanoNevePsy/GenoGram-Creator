@@ -790,7 +790,7 @@ export default function GenogramApp() {
         const ids = people.map(() => generateId());
         const newNodes: GenNode[] = people.map((p, i) => ({
             id: ids[i], x: snap(CENTER_POS + p.x), y: snap(CENTER_POS + p.y),
-            gender: p.gender, name: p.name, birthDate: '',
+            gender: p.gender, name: p.name, birthDate: p.birthDate,
             deceased: p.deceased, indexPerson: false,
             substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false,
             gayLesbian: false, notes: [],
