@@ -8,3 +8,9 @@ it('prefers the latest full cloud/local version without losing offline data',()=
  expect(latestForObsidian(newer,older).title).toBe('Latest');
  expect(latestForObsidian(older,newer).title).toBe('Latest');
 });
+
+it('Obsidian picker uses the shared themed panel and busy state',async()=>{
+ const {createElement}=await import('react');const {renderToStaticMarkup}=await import('react-dom/server');const {ScegliPerPsyDiary}=await import('./ponte');
+ const html=renderToStaticMarkup(createElement(ScegliPerPsyDiary,{destinazione:'Obsidian',descrizione:'Scambio locale',disabilitato:true,genograms:[{id:'demo',title:'Esempio',category:'family',lastModified:1,data:{nodes:[],edges:[],groups:[]}}],onScegli:()=>{},onAnnulla:()=>{}}));
+ expect(html).toContain('theme-panel');expect(html).toContain('theme-border');expect(html).toContain('theme-text-muted');expect(html).toContain('Obsidian');expect(html).toContain('disabled');expect(html).not.toContain('#f6f0e6');expect(html).not.toContain('#1a2131');
+});
