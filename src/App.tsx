@@ -7,7 +7,7 @@ import {
     AlignJustify, CircleDashed, FileText, Search, RotateCcw, RotateCw,
     Filter, SortAsc, Tag, HelpCircle,
     Target, Grid3X3, TrendingUp, Image as ImageIcon, FileImage, Check, Info,
-    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy, Baby, Shapes, Boxes, Menu // <--- Network aggiunto qui
+    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy, Baby, Shapes, Boxes, Menu, ScanLine // <--- Network aggiunto qui
 } from 'lucide-react';
 import { StatusBar } from '@capacitor/status-bar';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -39,6 +39,8 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useCanvasInteraction } from './hooks/useCanvasInteraction';
 import { MinuchinManager, MinuchinOverlay, mapToSvgString } from './components/minuchin';
 import { PeopleListPanel, describePerson } from './components/peopleList';
+import type { ImportedPerson, ImportedLink } from './components/imageImportModal';
+import { ImageImportModal } from './components/imageImportModal';
 import { readLocalIndex, readFullGenogram, removeLocalGenogram, persistImportedLocally, downloadJsonFile } from './services/storage';
 
 
@@ -56,6 +58,7 @@ export default function GenogramApp() {
     const [stickyNotes, setStickyNotes] = useState<StickyNoteData[]>([]);
     const [structuralMaps, setStructuralMaps] = useState<StructuralMap[]>([]);
     const [showMinuchin, setShowMinuchin] = useState(false);
+    const [showImageImport, setShowImageImport] = useState(false);
     const [overlayMapId, setOverlayMapId] = useState<string | null>(null);
     // Barra strumenti: sfumatura a destra solo quando il contenuto trabocca davvero
     const toolbarRef = useRef<HTMLDivElement>(null);
@@ -481,6 +484,7 @@ export default function GenogramApp() {
     useEffect(() => {
         const onEsc = (e: KeyboardEvent) => {
             if (e.key !== 'Escape') return;
+            if (showImageImport) return setShowImageImport(false);
             if (showMinuchin) return setShowMinuchin(false);      // gestisce da sé i sotto-livelli
             if (showReportConfig) return setShowReportConfig(false);
             if (showReport) return setShowReport(false);
@@ -490,7 +494,7 @@ export default function GenogramApp() {
         };
         window.addEventListener('keydown', onEsc);
         return () => window.removeEventListener('keydown', onEsc);
-    }, [showMinuchin, showReportConfig, showReport, showDesigner, showSettings, showHelp]);
+    }, [showImageImport, showMinuchin, showReportConfig, showReport, showDesigner, showSettings, showHelp]);
 
     // Shortcut "i" per legenda
     useEffect(() => {
@@ -772,6 +776,40 @@ export default function GenogramApp() {
         const n = { id, x: STAGING.x + (i % STAGING.cols) * STAGING.dx, y: STAGING.y + Math.floor(i / STAGING.cols) * STAGING.dy, gender, name, birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] };
         updateNodes(prev => [...prev, n as GenNode]);
         return id;
+    };
+
+    // --- IMPORT DA IMMAGINE ---
+    // Arrivano posizioni relative al centro del disegno: si traslano al centro
+    // del canvas. Persone e relazioni entrano con un solo updateAll, non con
+    // due chiamate separate: un'importazione è un gesto unico e l'annulla deve
+    // disfarla tutta, non una persona per volta.
+    // I tipi di relazione sono quelli neutri ('matrimonio', 'figlio
+    // biologico'): dall'immagine si legge CHI è legato a chi, non come.
+    const importFromImage = (people: ImportedPerson[], links: ImportedLink[]) => {
+        if (people.length === 0) return;
+        const ids = people.map(() => generateId());
+        const newNodes: GenNode[] = people.map((p, i) => ({
+            id: ids[i], x: snap(CENTER_POS + p.x), y: snap(CENTER_POS + p.y),
+            gender: p.gender, name: p.name, birthDate: '',
+            deceased: p.deceased, indexPerson: false,
+            substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false,
+            gayLesbian: false, notes: [],
+        }));
+        const newEdges: RelationEdge[] = links
+            .filter(l => ids[l.a] && ids[l.b])
+            .map(l => ({
+                id: generateId(), fromId: ids[l.a], toId: ids[l.b],
+                type: l.kind === 'child' ? 'child-bio' : 'marriage',
+                label: '', notes: [],
+            }));
+        updateAll(
+            [...nodesRef.current, ...newNodes],
+            [...edgesRef.current, ...newEdges],
+            groupsRef.current,
+        );
+        setSelectedNodeIds(ids);
+        setShowImageImport(false);
+        setLiveMessage(`Importate ${newNodes.length} persone e ${newEdges.length} relazioni dall'immagine`);
     };
 
     const addNodeAtCenter = (gender: Gender) => {
@@ -1861,6 +1899,7 @@ export default function GenogramApp() {
 
             {showDesigner && <StyleDesignerModal onClose={() => setShowDesigner(false)} onSave={(p) => setCustomPresets(prev => [...prev, p])} />}
             {showReport && <ReportModal onClose={() => setShowReport(false)} nodes={nodes} edges={edges} groups={groups} />}
+            {showImageImport && <ImageImportModal onClose={() => setShowImageImport(false)} onImport={importFromImage} />}
             {showMinuchin && <MinuchinManager maps={structuralMaps} nodes={nodes} edges={edges} groups={groups} selectedNodeIds={selectedNodeIds} darkMode={darkMode} theme={currentTheme} onChange={setStructuralMaps} onClose={() => setShowMinuchin(false)} onCreatePerson={addPersonFromMap} overlayMapId={overlayMapId} onOverlayChange={setOverlayMapId} />}
             {/* --- INCOLLA QUI IL BLOCCO SPOSTATO --- */}
             {showReportConfig && (
@@ -2009,6 +2048,7 @@ export default function GenogramApp() {
                         <button onClick={autoLayout} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Auto-Layout" title="Auto-Layout"><Network size={18} /></button>
                         <button onClick={autoLayoutCM} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Layout Genogramma (Carter & McGoldrick)" title="Layout Genogramma (Carter & McGoldrick)"><GitBranch size={18} /></button>
                         <button onClick={() => setShowMinuchin(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Mappe Strutturali (Minuchin)" title="Mappe Strutturali (Minuchin)"><Boxes size={18} /></button>
+                        <button onClick={() => setShowImageImport(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Importa genogramma da immagine" title="Importa da immagine (foto o scansione)"><ScanLine size={18} /></button>
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
 
                         <button onClick={() => alignNodes('h')} className="p-1.5 theme-hover rounded shrink-0" title="Allinea Orizzontale"><AlignJustify size={18} /></button>
