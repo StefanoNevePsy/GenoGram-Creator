@@ -26,7 +26,7 @@ export interface DetectedPerson {
     indexPerson: boolean;          // doppio contorno = paziente designato
     confidence: number;            // 0-1: quanto è netta la forma
     fillRatio: number;             // diagnostica: area buco / area bbox
-    corners: number;               // diagnostica: angoli del bbox dentro il buco
+    corners: number;               // diagnostica: raggio diagonale / raggio assiale
     parts: number;                 // frammenti uniti (4 ≈ croce del deceduto)
 }
 
@@ -45,6 +45,9 @@ export interface DetectOptions {
     minArea?: number;        // area minima di un buco, in pixel
     maxSizeRatio?: number;   // lato massimo come frazione del lato immagine
     dashGap?: number;        // raggio con cui si saldano i tratteggi (0 = mai)
+    leakSeal?: number;       // tappa le fughe più strette di 2k nei contorni aperti
+    adaptive?: boolean;      // soglia locale: foto di un disegno, luce non uniforme
+    localContrast?: number;  // quanto più scuro del vicinato (default 0.12)
     debug?: boolean;         // restituisce le maschere intermedie (solo per i test)
 }
 
@@ -76,33 +79,40 @@ const otsu = (hist: number[], total: number): number => {
     return thr;
 };
 
-// Chiusura morfologica (dilata poi erode): salda i tratti interrotti.
-const closeMask = (src: Uint8Array, W: number, H: number, r: number): Uint8Array => {
-    if (r <= 0) return src;
-    const N = W * H;
-    const dil = new Uint8Array(N);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-        let on = 0;
-        for (let dy = -r; dy <= r && !on; dy++) for (let dx = -r; dx <= r; dx++) {
-            const nx = x + dx, ny = y + dy;
-            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-            if (src[ny * W + nx]) { on = 1; break; }
+// Dilatazione/erosione con elemento quadrato, separabile: una passata per
+// righe e una per colonne, con finestra scorrevole. Costa O(N) invece di
+// O(N·r²), e su una foto da telefono è la differenza tra un secondo e un
+// minuto. Fuori immagine conta come pieno in erosione, così il bordo non si
+// consuma, e come vuoto in dilatazione.
+const morph = (src: Uint8Array, W: number, H: number, r: number, dilate: boolean): Uint8Array => {
+    const N = W * H, span = 2 * r + 1;
+    const tmp = new Uint8Array(N), out = new Uint8Array(N);
+    const pass = (from: Uint8Array, to: Uint8Array, outer: number, inner: number, step: number, base: (o: number) => number) => {
+        for (let o = 0; o < outer; o++) {
+            const b = base(o);
+            let cnt = 0, oob = 0;
+            for (let k = -r; k <= r; k++) {
+                if (k < 0 || k >= inner) oob++;
+                else if (from[b + k * step]) cnt++;
+            }
+            for (let i = 0; i < inner; i++) {
+                to[b + i * step] = dilate
+                    ? (cnt > 0 ? 1 : 0)
+                    : (cnt + oob === span ? 1 : 0);
+                const rem = i - r, add = i + r + 1;
+                if (rem < 0 || rem >= inner) oob--; else if (from[b + rem * step]) cnt--;
+                if (add < 0 || add >= inner) oob++; else if (from[b + add * step]) cnt++;
+            }
         }
-        dil[y * W + x] = on;
-    }
-    const ero = new Uint8Array(N);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-        let all = 1;
-        for (let dy = -r; dy <= r && all; dy++) for (let dx = -r; dx <= r; dx++) {
-            const nx = x + dx, ny = y + dy;
-            // fuori immagine = considerato pieno, così non si erode il bordo
-            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-            if (!dil[ny * W + nx]) { all = 0; break; }
-        }
-        ero[y * W + x] = all;
-    }
-    return ero;
+    };
+    pass(src, tmp, H, W, 1, y => y * W);
+    pass(tmp, out, W, H, W, x => x);
+    return out;
 };
+
+// Chiusura morfologica (dilata poi erode): salda i tratti interrotti.
+const closeMask = (src: Uint8Array, W: number, H: number, r: number): Uint8Array =>
+    r <= 0 ? src : morph(morph(src, W, H, r, true), W, H, r, false);
 
 // Etichettatura delle componenti connesse (8 vicini): bridging dei tratti
 // leggermente sfalsati senza dover ingrassare la maschera.
@@ -359,7 +369,46 @@ const estimateStrokeWidth = (mask: Uint8Array, W: number, H: number, fallback: n
     return fallback;
 };
 
-interface Prepared { ink: Uint8Array; threshold: number; }
+// Lo sfondo esterno, con le fughe sottili tappate.
+//
+// Un contorno disegnato a mano spesso non chiude: fra il lato sinistro e
+// quello inferiore resta un varco di un pixel, e il riempimento dello sfondo
+// ci cola dentro facendo sparire la persona. La chiusura morfologica non
+// basta — un tratto sottile, una volta eroso di nuovo, lascia il varco com'era
+// — e allargare l'inchiostro falserebbe le misure dei simboli e salderebbe le
+// etichette.
+//
+// Si lavora invece sullo SFONDO: lo si erode di k, così i canali più stretti
+// di 2k si strozzano e spariscono; si riempie dai bordi dell'immagine; si
+// ridilata il risultato e lo si interseca con lo sfondo di partenza. Il
+// bordino tolto viene restituito solo dove comunicava davvero con l'esterno.
+// L'inchiostro non viene toccato: i riquadri dei simboli restano esatti.
+const outsideBackground = (ink: Uint8Array, W: number, H: number, k: number): Uint8Array => {
+    const N = W * H;
+    const bg = new Uint8Array(N);
+    for (let i = 0; i < N; i++) bg[i] = ink[i] ? 0 : 1;
+    const open = k > 0 ? morph(bg, W, H, k, false) : bg;
+
+    const seed = new Uint8Array(N);
+    const stack: number[] = [];
+    const push = (i: number) => { if (open[i] && !seed[i]) { seed[i] = 1; stack.push(i); } };
+    for (let x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
+    for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
+    while (stack.length) {
+        const i = stack.pop()!;
+        const x = i % W, y = (i / W) | 0;
+        if (x > 0) push(i - 1);
+        if (x < W - 1) push(i + 1);
+        if (y > 0) push(i - W);
+        if (y < H - 1) push(i + W);
+    }
+
+    const out = k > 0 ? morph(seed, W, H, k, true) : seed;
+    for (let i = 0; i < N; i++) out[i] = out[i] && bg[i] ? 1 : 0;
+    return out;
+};
+
+interface Prepared { ink: Uint8Array; threshold: number; strokeW: number }
 
 const prepare = (img: ImageLike, opts: DetectOptions): Prepared => {
     const { width: W, height: H, data } = img;
@@ -375,32 +424,48 @@ const prepare = (img: ImageLike, opts: DetectOptions): Prepared => {
     }
     const threshold = opts.threshold ?? Math.min(otsu(hist, N), 200);
     let ink: Uint8Array = new Uint8Array(N);
-    for (let i = 0; i < N; i++) ink[i] = lum[i] < threshold ? 1 : 0;
+
+    if (opts.adaptive) {
+        // Soglia locale (Bradley): un pixel è inchiostro se è più scuro della
+        // media del suo vicinato. Una soglia globale non sopravvive alla foto
+        // di un foglio, dove l'ombra di un lato è più scura dell'inchiostro
+        // dell'altro; qui conta solo il contrasto locale.
+        const sum = new Float64Array(N);
+        for (let y = 0; y < H; y++) {
+            let row = 0;
+            for (let x = 0; x < W; x++) {
+                row += lum[y * W + x];
+                sum[y * W + x] = row + (y > 0 ? sum[(y - 1) * W + x] : 0);
+            }
+        }
+        const s = Math.max(7, Math.round(Math.min(W, H) / 12));
+        const t = 1 - (opts.localContrast ?? 0.12);
+        const at = (x: number, y: number) => sum[Math.min(H - 1, Math.max(0, y)) * W + Math.min(W - 1, Math.max(0, x))];
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            const x0 = Math.max(0, x - s), y0 = Math.max(0, y - s);
+            const x1 = Math.min(W - 1, x + s), y1 = Math.min(H - 1, y + s);
+            const n = (x1 - x0 + 1) * (y1 - y0 + 1);
+            const tot = at(x1, y1) - (x0 > 0 ? at(x0 - 1, y1) : 0) - (y0 > 0 ? at(x1, y0 - 1) : 0)
+                + (x0 > 0 && y0 > 0 ? at(x0 - 1, y0 - 1) : 0);
+            ink[y * W + x] = lum[y * W + x] < (tot / n) * t ? 1 : 0;
+        }
+    } else {
+        for (let i = 0; i < N; i++) ink[i] = lum[i] < threshold ? 1 : 0;
+    }
+
+    const strokeW = estimateStrokeWidth(ink, W, H, 2);
     ink = closeMask(ink, W, H, opts.closeGaps ?? 0);
-    return { ink, threshold };
+    return { ink, threshold, strokeW };
 };
 
 interface Hole { x0: number; y0: number; x1: number; y1: number; area: number; px: number[]; }
 
 const findPeople = (
-    ink: Uint8Array, W: number, H: number, opts: DetectOptions
+    ink: Uint8Array, W: number, H: number, opts: DetectOptions, strokeW: number
 ): { people: DetectedPerson[], rejected: number, frames: Blob[] } => {
     const N = W * H;
-
-    // sfondo esterno: flood fill a 4 vicini dai bordi (stack esplicito, niente ricorsione)
-    const outside = new Uint8Array(N);
     const stack: number[] = [];
-    const pushIfBg = (i: number) => { if (!ink[i] && !outside[i]) { outside[i] = 1; stack.push(i); } };
-    for (let x = 0; x < W; x++) { pushIfBg(x); pushIfBg((H - 1) * W + x); }
-    for (let y = 0; y < H; y++) { pushIfBg(y * W); pushIfBg(y * W + W - 1); }
-    while (stack.length) {
-        const i = stack.pop()!;
-        const x = i % W, y = (i / W) | 0;
-        if (x > 0) pushIfBg(i - 1);
-        if (x < W - 1) pushIfBg(i + 1);
-        if (y > 0) pushIfBg(i - W);
-        if (y < H - 1) pushIfBg(i + W);
-    }
+    const outside = outsideBackground(ink, W, H, opts.leakSeal ?? Math.max(1, Math.round(strokeW * 0.6)));
 
     // buchi = non-inchiostro non raggiunto dall'esterno
     const minArea = opts.minArea ?? 60;
@@ -436,13 +501,16 @@ const findPeople = (
     // Il vincolo sul lato MINIMO evita il caso opposto: un riquadro di
     // evidenziazione che inghiotte il simbolo che contiene.
     const side = (hl: Hole) => Math.max(hl.x1 - hl.x0 + 1, hl.y1 - hl.y0 + 1);
+    const mergePad = Math.max(2, Math.ceil(strokeW * 1.4));
     const parent = holes.map((_, i) => i);
     const find = (a: number): number => (parent[a] === a ? a : (parent[a] = find(parent[a])));
     const near = (a: Hole, b: Hole, pad: number) =>
         a.x0 - pad <= b.x1 && b.x0 - pad <= a.x1 && a.y0 - pad <= b.y1 && b.y0 - pad <= a.y1;
     for (let i = 0; i < holes.length; i++) {
         for (let j = i + 1; j < holes.length; j++) {
-            if (!near(holes[i], holes[j], 6)) continue;
+            // la distanza ammessa è quella del tratto che separa gli spicchi
+            // della croce, non una costante: più in là c'è già l'etichetta
+            if (!near(holes[i], holes[j], mergePad)) continue;
             // uniamo solo se il risultato resta compatto (no catene lungo le linee)
             const ux0 = Math.min(holes[i].x0, holes[j].x0), ux1 = Math.max(holes[i].x1, holes[j].x1);
             const uy0 = Math.min(holes[i].y0, holes[j].y0), uy1 = Math.max(holes[i].y1, holes[j].y1);
@@ -450,6 +518,15 @@ const findPeople = (
             const ar = uw / uh;
             if (uw > maxSide || uh > maxSide || ar < 0.55 || ar > 1.8) continue;
             if (Math.max(uw, uh) > 3 * Math.min(side(holes[i]), side(holes[j]))) continue;
+            // Non assorbire le schegge: chiudendo i tratti aperti si salda il
+            // simbolo all'etichetta sottostante e lo spazio rimasto tra i due
+            // diventa un buco lungo e piatto, che gonfierebbe il riquadro.
+            // Gli spicchi della croce del deceduto invece sono compatti.
+            const sliver = (a: Hole, b: Hole) => {
+                const aw = a.x1 - a.x0 + 1, ah = a.y1 - a.y0 + 1;
+                return Math.max(aw, ah) / Math.min(aw, ah) > 3 && a.area > b.area * 0.15;
+            };
+            if (sliver(holes[i], holes[j]) || sliver(holes[j], holes[i])) continue;
             const a = find(i), b = find(j);
             if (a !== b) parent[a] = b;
         }
@@ -482,29 +559,46 @@ const findPeople = (
             mask[(y - y0) * w + (x - x0)] = 1;
         }));
 
-        // test degli angoli: l'interno di un quadrato arriva negli angoli del
-        // proprio bbox, quello di un cerchio o di un rombo no. L'inset 0.10
-        // cade fuori da un cerchio inscritto e dentro un quadrato.
-        const ins = (fx: number, fy: number) => {
-            const x = Math.round(fx * (w - 1)), y = Math.round(fy * (h - 1));
-            return mask[y * w + x] ? 1 : 0;
+        // Profilo radiale: quanto lontano arriva il buco lungo le diagonali
+        // rispetto agli assi, in coordinate normalizzate sul bbox.
+        // Quadrato ≈ 1.41, cerchio ≈ 1, rombo ≈ 0.71.
+        // Si misura il punto più lontano, non il primo vuoto incontrato, così
+        // né il testo scritto dentro né la croce del deceduto — che toglie una
+        // striscia sottile ma lascia le punte negli angoli — falsano la forma.
+        const cxL = (w - 1) / 2, cyL = (h - 1) / 2;
+        const reach = (dx: number, dy: number) => {
+            let best = 0;
+            for (let t = 0.2; t <= 1.45; t += 0.03) {
+                const x = Math.round(cxL + dx * t * cxL), y = Math.round(cyL + dy * t * cyL);
+                if (x < 0 || y < 0 || x >= w || y >= h) break;
+                if (mask[y * w + x]) best = t;
+            }
+            return best;
         };
-        const corners = ins(0.10, 0.10) + ins(0.90, 0.10) + ins(0.10, 0.90) + ins(0.90, 0.90);
+        const d = Math.SQRT1_2;
+        const mid = (v: number[]) => { const s = [...v].sort((a, b) => a - b); return (s[1] + s[2]) / 2; };
+        const axis = mid([reach(1, 0), reach(-1, 0), reach(0, 1), reach(0, -1)]);
+        const diag = mid([reach(d, d), reach(-d, d), reach(d, -d), reach(-d, -d)]);
+        const corners = axis > 0 ? diag / axis : 1;
+        // Nessuna forma convessa supera √2 (il quadrato) né scende sotto il
+        // rombo: quello che ci sta fuori è un falso buco — lo spazio fra due
+        // lettere, una fuga tappata — non un simbolo.
+        if (corners > 1.52 || corners < 0.62) return;
 
         // area del buco rispetto al bbox: quadrato ~1, cerchio ~0.79, rombo ~0.5
         // (il testo interno la abbassa un po', per questo le soglie sono larghe)
         const fillRatio = area / (w * h);
 
         // Due indizi indipendenti; concordi → alta confidenza, discordi → bassa.
-        const squareByCorners = corners >= 3;
+        const squareByShape = corners >= 1.18;
         const squareByArea = fillRatio >= 0.85;
         let gender: DetectedGender;
-        if (fillRatio < 0.60 && corners <= 1) gender = 'NonBinary';          // rombo
-        else if (squareByCorners || squareByArea) gender = 'M';
+        if (corners <= 0.92 && fillRatio < 0.62) gender = 'NonBinary';       // rombo
+        else if (squareByShape || squareByArea) gender = 'M';
         else gender = 'F';
         const confidence = gender === 'NonBinary'
-            ? Math.min(1, (0.60 - fillRatio) * 4 + 0.5)
-            : (squareByCorners === squareByArea ? 0.95 : 0.55);
+            ? Math.min(1, (0.92 - corners) * 3 + 0.5)
+            : (squareByShape === squareByArea ? 0.95 : 0.6);
 
         // doppio contorno concentrico = paziente designato
         const indexPerson = idxs.length === 2 && (() => {
@@ -539,7 +633,7 @@ const findPeople = (
                 x0: Math.round(p.cx - p.w / 2), y0: Math.round(p.cy - p.h / 2),
                 x1: Math.round(p.cx + p.w / 2), y1: Math.round(p.cy + p.h / 2),
             });
-            return s >= med * 0.45 && s <= med * 2.2;
+            return s >= med * 0.55 && s <= med * 2.2;
         });
         rejected += people.length - kept.length;
         people.length = 0; people.push(...kept);
@@ -557,12 +651,11 @@ const medianSide = (people: DetectedPerson[]): number => {
 
 const findLinks = (
     ink: Uint8Array, data: Uint8ClampedArray, W: number, H: number,
-    people: DetectedPerson[], frames: Blob[], opts: DetectOptions
+    people: DetectedPerson[], frames: Blob[], opts: DetectOptions, strokeW: number
 ): { links: DetectedLink[]; debug?: { compId: Int32Array; owner: Int32Array; line: Uint8Array; frames: Blob[] } } => {
     if (people.length < 2) return { links: [] };
     const N = W * H;
     const medSide = medianSide(people) || 20;
-    const strokeW = estimateStrokeWidth(ink, W, H, Math.max(2, medSide * 0.12));
     // w/h sono le misure del BUCO: per cancellare anche il contorno del simbolo
     // serve allargare di un tratto abbondante, altrimenti i suoi due fianchi
     // restano in maschera e fanno da ponte attorno al simbolo, ricucendo la
@@ -661,7 +754,10 @@ const findLinks = (
             c.rawIds.forEach(r => {
                 if (rawSpan[r] > 0 && rawSpan[r] <= medSide * 0.6) { shortN++; shortPx += rawPx[r]; }
             });
-            const dashed = shortN >= 3 && shortPx >= c.px * 0.25;
+            // una linea tratteggiata è fatta quasi SOLO di frammenti corti;
+            // una linea continua a mano se ne guadagna qualcuno dove la penna
+            // ha saltato, ma resta per lo più un tratto unico
+            const dashed = shortN >= 3 && shortPx >= c.px * 0.5;
             const colored = c.px > 0 && c.colPx > c.px * 0.5;
 
             // righe generazionali: raggruppa i membri per ordinata
@@ -691,17 +787,97 @@ const findLinks = (
 
 export const analyzeGenogramImage = (img: ImageLike, opts: DetectOptions = {}): AnalyzeResult => {
     const { width, height } = img;
-    const { ink, threshold } = prepare(img, opts);
-    const { people, rejected, frames } = findPeople(ink, width, height, opts);
-    const { links, debug } = findLinks(ink, img.data, width, height, people, frames, opts);
+    const { ink, threshold, strokeW } = prepare(img, opts);
+    const { people, rejected, frames } = findPeople(ink, width, height, opts, strokeW);
+    const { links, debug } = findLinks(ink, img.data, width, height, people, frames, opts, strokeW);
     return { people, links, threshold, rejected, width, height, debug };
+};
+
+// --- TARATURA AUTOMATICA ---
+// Un genogramma stampato e la foto di uno disegnato a mano non si leggono con
+// gli stessi parametri, e chiedere all'utente di regolare soglia e chiusura a
+// tentativi è chiedergli di fare il lavoro al posto nostro. Si prova una
+// manciata di combinazioni e si tiene la migliore.
+//
+// Il punteggio non premia solo "quante persone ho trovato": un genogramma
+// vero è fatto di simboli di taglia simile, disposti su poche righe
+// generazionali e quasi tutti collegati a qualcun altro. Il rumore di una
+// foto non ha nessuna di queste proprietà.
+const scoreResult = (r: AnalyzeResult): number => {
+    const n = r.people.length;
+    if (n < 2) return n * 0.2;
+    const linked = new Set<number>();
+    r.links.forEach(l => { linked.add(l.a); linked.add(l.b); });
+
+    // Conta solo chi è davvero una persona: forma netta e almeno un legame.
+    // Contare le teste e basta premierebbe i parametri che inventano buchi —
+    // quelli fra una lettera e l'altra sono tanti e non li collega nessuno.
+    const good = r.people.filter((p, i) => p.confidence >= 0.6 && linked.has(i)).length;
+
+    const sides = r.people.map(p => (p.w + p.h) / 2);
+    const mean = sides.reduce((a, b) => a + b, 0) / n;
+    const sd = Math.sqrt(sides.reduce((a, b) => a + (b - mean) * (b - mean), 0) / n);
+    const consistency = mean > 0 ? Math.max(0, 1 - sd / mean) : 0;
+    const conf = r.people.reduce((a, p) => a + p.confidence, 0) / n;
+
+    return (good + 0.15 * (n - good)) * (0.55 + 0.25 * consistency + 0.20 * conf);
+};
+
+export interface AutoAnalyzeResult extends AnalyzeResult {
+    /** i parametri che hanno vinto: utili da mostrare e da ritoccare a mano */
+    options: DetectOptions;
+    score: number;
+    attempts: { options: DetectOptions; people: number; links: number; score: number }[];
+}
+
+export const autoAnalyzeGenogramImage = (img: ImageLike, base: DetectOptions = {}): AutoAnalyzeResult => {
+    // Quanto va chiuso un tratto interrotto non dipende dalla risoluzione ma
+    // dallo spessore della penna: a mano il buco in un angolo è largo quanto
+    // il tratto. Lo si misura su una passata senza chiusura e si costruiscono
+    // i tentativi attorno a quel valore.
+    const probe = prepare(img, { ...base, closeGaps: 0 });
+    const sw = estimateStrokeWidth(probe.ink, img.width, img.height, 2);
+    const cap = Math.max(1, Math.round(Math.min(img.width, img.height) / 40));
+    const gaps = [...new Set([0, Math.min(Math.round(sw * 0.8), cap)])];
+    // Tappare le fughe recupera i contorni aperti di un disegno a mano, ma su
+    // una stampa nitida inventa buchi fra una lettera e l'altra: si provano
+    // entrambe e decide il punteggio.
+    const seals = [...new Set([0, Math.max(1, Math.round(sw * 0.6))])];
+
+    const combos: DetectOptions[] = [];
+    [false, true].forEach(adaptive => gaps.forEach(closeGaps => seals.forEach(leakSeal => {
+        combos.push({
+            ...base, adaptive,
+            closeGaps: base.closeGaps ?? closeGaps,
+            leakSeal: base.leakSeal ?? leakSeal,
+        });
+    })));
+
+    let best: AnalyzeResult | null = null, bestOpts = combos[0], bestScore = -1;
+    const attempts: AutoAnalyzeResult['attempts'] = [];
+    const seen = new Set<string>();
+    combos.forEach(o => {
+        const key = `${o.adaptive}|${o.closeGaps}|${o.leakSeal}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const r = analyzeGenogramImage(img, o);
+        const score = scoreResult(r);
+        attempts.push({ options: o, people: r.people.length, links: r.links.length, score: Math.round(score * 10) / 10 });
+        if (score > bestScore) { bestScore = score; best = r; bestOpts = o; }
+    });
+
+    const result = best as AnalyzeResult | null;
+    if (!result) {
+        return { people: [], links: [], threshold: 0, rejected: 0, width: img.width, height: img.height, options: bestOpts, score: 0, attempts };
+    }
+    return { ...result, options: bestOpts, score: Math.round(bestScore * 10) / 10, attempts };
 };
 
 /** Solo i simboli, senza la rete delle relazioni. */
 export const detectGenogramPeople = (img: ImageLike, opts: DetectOptions = {}) => {
     const { width, height } = img;
-    const { ink, threshold } = prepare(img, opts);
-    const { people, rejected } = findPeople(ink, width, height, opts);
+    const { ink, threshold, strokeW } = prepare(img, opts);
+    const { people, rejected } = findPeople(ink, width, height, opts, strokeW);
     return { people, threshold, rejected };
 };
 
