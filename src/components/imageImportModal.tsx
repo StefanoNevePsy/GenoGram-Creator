@@ -8,16 +8,18 @@
 // i comandi manuali restano, sotto, per i casi che la taratura sbaglia.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Upload, Loader2, Users, Link2, SlidersHorizontal, ScanLine } from 'lucide-react';
+import { X, Upload, Loader2, Users, Link2, SlidersHorizontal, ScanLine, Type } from 'lucide-react';
 import type { DetectOptions, AutoAnalyzeResult, DetectedPerson, DetectedLink } from '../utils/imageImport';
 import { autoAnalyzeGenogramImage, analyzeGenogramImage, mapToCanvas } from '../utils/imageImport';
+import type { PersonLabels } from '../utils/ocr';
+import { birthDateFrom } from '../utils/ocr';
 import type { Gender } from '../types';
 
 // Oltre questa risoluzione non si guadagna niente e si paga in secondi: una
 // foto da telefono porta simboli da 200px dove ne bastano 40.
 const MAX_SIDE = 1600;
 
-export interface ImportedPerson { x: number; y: number; gender: Gender; deceased: boolean; name: string }
+export interface ImportedPerson { x: number; y: number; gender: Gender; deceased: boolean; name: string; birthDate: string }
 export interface ImportedLink { a: number; b: number; kind: DetectedLink['kind'] }
 
 const GENDER_COLOR: Record<string, string> = { M: '#0ea5e9', F: '#ec4899', NonBinary: '#a855f7' };
@@ -32,6 +34,8 @@ export const ImageImportModal = ({ onClose, onImport }: {
     const [opts, setOpts] = useState<DetectOptions>({});
     const [advanced, setAdvanced] = useState(false);
     const [withLinks, setWithLinks] = useState(true);
+    const [labels, setLabels] = useState<PersonLabels[] | null>(null);
+    const [ocr, setOcr] = useState<{ done: number, total: number } | null>(null);
     const imgRef = useRef<ImageData | null>(null);
     const srcRef = useRef<HTMLCanvasElement | null>(null);
     const previewRef = useRef<HTMLCanvasElement>(null);
@@ -81,6 +85,7 @@ export const ImageImportModal = ({ onClose, onImport }: {
                     ? autoAnalyzeGenogramImage(data, o)
                     : { ...analyzeGenogramImage(data, o), options: o, score: 0, attempts: [] };
                 setResult(res);
+                setLabels(null);
                 setOpts(res.options);
                 paint(res);
                 if (res.people.length === 0) setErr('Nessun simbolo riconosciuto. Prova a ritagliare l\'immagine attorno al genogramma, o regola i comandi avanzati.');
@@ -114,15 +119,38 @@ export const ImageImportModal = ({ onClose, onImport }: {
 
     useEffect(() => { if (result) paint(result); }, [result, paint]);
 
+    // Il riconoscimento del testo è a richiesta: carica qualche megabyte di
+    // motore e impiega secondi, e a molti basta la struttura.
+    const readLabels = async () => {
+        const src = srcRef.current;
+        if (!result || !src) return;
+        setErr(''); setOcr({ done: 0, total: 1 });
+        try {
+            const { readPersonLabels } = await import('../utils/ocr');
+            const got = await readPersonLabels(src, result.people, result.texts,
+                (done, total) => setOcr({ done, total }));
+            setLabels(got);
+            if (got.every(l => !l.name && !l.birthYear && !l.age)) {
+                setErr('Nessuna scritta leggibile: le persone saranno importate senza nome.');
+            }
+        } catch (e) {
+            setErr('Lettura delle scritte non riuscita: ' + (e as Error).message);
+        } finally { setOcr(null); }
+    };
+
     const confirm = () => {
         if (!result) return;
         const placed = mapToCanvas(result.people, { centerX: 0, centerY: 0, nodeSize: 40, snap: 0 });
-        const people: ImportedPerson[] = placed.map((p, i) => ({
-            x: p.x, y: p.y,
-            gender: (p.gender === 'NonBinary' ? 'NonBinary' : p.gender) as Gender,
-            deceased: p.deceased,
-            name: `Persona ${i + 1}`,
-        }));
+        const people: ImportedPerson[] = placed.map((p, i) => {
+            const l = labels?.[i];
+            return {
+                x: p.x, y: p.y,
+                gender: (p.gender === 'NonBinary' ? 'NonBinary' : p.gender) as Gender,
+                deceased: p.deceased,
+                name: l?.name || `Persona ${i + 1}`,
+                birthDate: l ? birthDateFrom(l) : '',
+            };
+        });
         const links: ImportedLink[] = withLinks
             ? result.links.map(l => ({ a: l.a, b: l.b, kind: l.kind }))
             : [];
@@ -184,6 +212,37 @@ export const ImageImportModal = ({ onClose, onImport }: {
                                 <input type="checkbox" className="w-3.5 h-3.5 accent-blue-600" checked={withLinks} onChange={e => setWithLinks(e.target.checked)} />
                                 Importa anche i legami
                             </label>
+                        </div>
+                    )}
+
+                    {result && result.people.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-3 text-xs theme-text">
+                            {ocr ? (
+                                <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" />
+                                    Lettura delle scritte… {ocr.done}/{ocr.total}</span>
+                            ) : (
+                                <button onClick={readLabels} className="px-2.5 py-1.5 rounded-lg border theme-border hover:bg-black/5 dark:hover:bg-white/10 flex items-center gap-1.5">
+                                    <Type size={13} /> {labels ? 'Rileggi' : 'Recupera nomi ed età'}
+                                </button>
+                            )}
+                            {labels && !ocr && (
+                                <span className="opacity-70">
+                                    {labels.filter(l => l.name).length} nomi · {labels.filter(l => l.birthYear || l.age).length} date
+                                </span>
+                            )}
+                            {!labels && !ocr && <span className="opacity-60">Senza questo passaggio le persone arrivano come «Persona 1, 2, 3…».</span>}
+                        </div>
+                    )}
+
+                    {labels && !ocr && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px] theme-text">
+                            {labels.map((l, i) => (
+                                <div key={i} className="px-2 py-1 rounded border theme-border truncate" title={`${l.name || ''} ${l.birthYear || ''}`}>
+                                    <span className="opacity-50">{i + 1}.</span>{' '}
+                                    <span className={l.name ? 'font-semibold' : 'opacity-50 italic'}>{l.name || 'senza nome'}</span>
+                                    {(l.birthYear || l.age) && <span className="opacity-60"> · {l.birthYear || `${l.age} anni`}</span>}
+                                </div>
+                            ))}
                         </div>
                     )}
 

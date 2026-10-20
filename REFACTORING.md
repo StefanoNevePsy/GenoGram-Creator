@@ -231,6 +231,49 @@ references) — non usarlo come verifica.
       sparisce alla prima persona.
       Test: scripts/e2e-a11y-list.cjs (16 check).
 
+- [x] **Import da immagine** (`utils/imageImport.ts`, `utils/ocr.ts`,
+      `components/imageImportModal.tsx`): da una foto o una scansione ricostruisce
+      persone, coppie e legami genitore-figlio, e prova a leggere nomi e anni.
+      Funziona su genogrammi stampati e su quelli disegnati a mano.
+
+      Il principio: non si cercano i simboli, si cercano i BUCHI. Ogni persona è
+      un contorno chiuso che racchiude dello sfondo; le linee di relazione non
+      racchiudono nulla. Si riempie lo sfondo dai bordi dell'immagine e quel che
+      resta di non-inchiostro sono gli interni dei simboli. Poi si cancellano i
+      simboli dalla maschera: resta la rete delle linee, e ogni componente
+      connessa tocca un insieme di persone; la disposizione per righe
+      generazionali dice se è una coppia o una discendenza.
+
+      Le cose che non si indovinano e vanno misurate sull'immagine:
+      - lo spessore del tratto (mediana del minimo fra corsa orizzontale e
+        verticale), e quello di OGNI singolo blob: in molti genogrammi le linee
+        di parentela sono molto più marcate delle scritte, e una soglia unica o
+        scarta tutte le etichette o scambia per etichetta i tratteggi;
+      - lo spessore del contorno di OGNI simbolo: w/h del rilevamento sono le
+        misure dell'interno, e lasciare in maschera i fianchi del contorno fa da
+        ponte attorno al simbolo fondendo tre generazioni in una;
+      - la forma, dal profilo radiale (raggio diagonale / assiale: quadrato 1.41,
+        cerchio 1, rombo 0.71), che la croce del deceduto non falsa.
+
+      Per i disegni a mano: soglia locale di Bradley (l'ombra di un lato del
+      foglio è più scura dell'inchiostro dell'altro) e sigillatura delle fughe —
+      si erode lo SFONDO invece di ingrassare l'inchiostro, così un varco di un
+      pixel in un angolo aperto si strozza senza falsare le misure dei simboli.
+
+      Otto combinazioni di parametri provate in automatico; vince quella con più
+      persone di forma netta, collegate e non accavallate (contare le teste
+      premierebbe i parametri che inventano buchi fra una lettera e l'altra).
+
+      Nomi e anni: si legge solo dove la convenzione dice di guardare (anno sopra,
+      nome sotto, età dentro), ritagli ingranditi 4x, con una seconda lettura a
+      fascia dove il riquadro non basta. Motore tesseract.js caricato a richiesta
+      e da file locali (`public/tesseract/`, 5.5 MB) perché funzioni anche senza
+      rete. Senza questo passaggio le persone arrivano come «Persona 1, 2, 3…».
+
+      I tipi di relazione assegnati sono quelli neutri (matrimonio, figlio
+      biologico): dall'immagine si legge CHI è legato a chi, non come.
+      Test: scripts/e2e-image-import.cjs (14 check).
+
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.
 - Tipi puri con `import type` (verbatimModuleSyntax attivo).
