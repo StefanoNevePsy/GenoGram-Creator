@@ -5,8 +5,8 @@ import react from '@vitejs/plugin-react'
 // intestazioni HTTP: va in un <meta>). Solo lì: l'app desktop carica i file dal
 // disco e quella Android ha il suo contenitore. L'app carica codice solo da sé
 // stessa e si collega solo a Firebase (accesso anonimo e Firestore del progetto
-// configurato): un eventuale difetto non può caricare script altrui né
-// spedire genogrammi altrove.
+// configurato). Il ponte Obsidian usa solo loopback (127.0.0.1), con
+// richiesta temporanea e nonce: non abilita destinazioni HTTP esterne.
 const csp = (): Plugin => ({
     name: 'genogram-csp',
     apply: 'build',
@@ -18,7 +18,7 @@ const csp = (): Plugin => ({
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob:",
             "font-src 'self' data:",
-            "connect-src 'self' data: blob: https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com",
+            "connect-src 'self' data: blob: http://127.0.0.1:* https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com",
             "frame-src https://*.firebaseapp.com",
             "worker-src 'self' blob:",
             "manifest-src 'self'",

@@ -1,3 +1,4 @@
+import {ObsidianBridge} from './components/obsidian';
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import {
     Square, Circle, ZoomIn, ZoomOut, Trash2, Grip, Sun, Moon,
@@ -1759,6 +1760,7 @@ export default function GenogramApp() {
     }, [psyRichiesta, genograms, psyScelta]);
     const ponteUI = (
         <>
+            <ObsidianBridge genograms={genograms} current={()=>currentGenId?genogrammaCorrente():null}/>
             {psyScelta && psyRichiesta && <ScegliPerPsyDiary genograms={genograms} avviso={psyRichiesta.modo === 'aggiorna' ? psyAvviso : undefined} onScegli={mandaAPsyDiary} onAnnulla={annullaPsy} />}
             {psyAvviso && !psyScelta && <AvvisoPonte testo={psyAvviso} onChiudi={() => setPsyAvviso('')} />}
             {modaleCategoria && <CategoryModal category={modaleCategoria.cat}
