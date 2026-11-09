@@ -410,6 +410,19 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
 
     const strokeDash = baseConfig.lineStyle === 'dashed' ? '8,4' : (baseConfig.lineStyle === 'dotted' ? '2,2' : (baseConfig.lineStyle === 'zigzag-soft' ? '7,4' : '0'));
 
+    // Il connettore di un figlio è una L: un tratto lungo la barra dei fratelli
+    // e poi la discesa fino al figlio. Il tratto orizzontale è STRUTTURA, non
+    // relazione: lo stile (punteggiato per l'adozione, tratteggiato per
+    // l'affido) appartiene solo alla discesa. Disegnando anche il tratto
+    // orizzontale nello stile della relazione, i figli di una stessa coppia si
+    // ridipingono a vicenda quel tratto — l'ultimo disegnato vince — e la
+    // barra finisce per mostrare lo stile di un figlio qualsiasi.
+    const isChildDrop = edge.type.startsWith('child');
+    const barD = `M ${start.x} ${start.y} L ${actualEndX} ${start.y}`;
+    const dropD = `M ${actualEndX} ${start.y} L ${actualEndX} ${actualEndY}`;
+    const structuralStroke = isSelected ? '#3b82f6' : (darkMode ? '#ffffff' : '#000000');
+    const lineWidth = isSelected ? 3 : (baseConfig.lineStyle === 'zigzag-thick' ? 3 : 2);
+
     const Decorator = () => {
 
         // FIX: Rendering specifico per Migliore Amico (Dotted centrale + 2 Solide esterne)
@@ -500,7 +513,9 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
 
         onAddChild(e, edge.id);
     };
-    return <g className="group hover:opacity-80 cursor-pointer" onClick={onSelect}><path d={pathD} stroke="transparent" strokeWidth={20} fill="none" /><path d={pathD} stroke={stroke} strokeWidth={isSelected ? 3 : (baseConfig.lineStyle === 'zigzag-thick' ? 3 : 2)} strokeDasharray={strokeDash} fill="none" /><Decorator />{edge.label && <text x={midX} y={midY - 15} textAnchor="middle" fill={stroke} className="text-[10px] bg-white dark:bg-gray-800 px-1">{edge.label}</text>}{isSelected && isStructural && (<g transform={`translate(${midX}, ${marriageBarY})`} onPointerDown={onAddChildH} style={{ touchAction: 'none' }}><circle r={12} fill="#10b981" stroke="white" /><Plus size={12} x={-6} y={-6} stroke="white" strokeWidth={3} /><title>Aggiungi Figlio alla Coppia</title></g>)}</g>;
+    return <g className="group hover:opacity-80 cursor-pointer" onClick={onSelect}><path d={pathD} stroke="transparent" strokeWidth={20} fill="none" />{isChildDrop
+        ? <g><path d={barD} stroke={structuralStroke} strokeWidth={lineWidth} fill="none" /><path d={dropD} stroke={stroke} strokeWidth={lineWidth} strokeDasharray={strokeDash} fill="none" /></g>
+        : <path d={pathD} stroke={stroke} strokeWidth={lineWidth} strokeDasharray={strokeDash} fill="none" />}<Decorator />{edge.label && <text x={midX} y={midY - 15} textAnchor="middle" fill={stroke} className="text-[10px] bg-white dark:bg-gray-800 px-1">{edge.label}</text>}{isSelected && isStructural && (<g transform={`translate(${midX}, ${marriageBarY})`} onPointerDown={onAddChildH} style={{ touchAction: 'none' }}><circle r={12} fill="#10b981" stroke="white" /><Plus size={12} x={-6} y={-6} stroke="white" strokeWidth={3} /><title>Aggiungi Figlio alla Coppia</title></g>)}</g>;
 };
 
 // --- COMPONENTE NODE SHAPE CON RINOMINA E COLORI ---

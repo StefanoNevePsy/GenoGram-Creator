@@ -45,10 +45,18 @@ export const calculateAgeAtDeath = (birthDateStr: string, deathDateStr: string):
 };
 
 // Parser per estrarre l'anno da testo libero
-export const extractYear = (text: string): number => {
+export const extractYear = (text: string, today = new Date()): number => {
     if (!text) return 0;
     const match = text.match(/\d{4}/);
     if (match) return parseInt(match[0]);
+    // Un valore di una-tre cifre è un'età digitata al posto della data (stessa
+    // convenzione di parseDate e calculateAge): senza questo, chi è stato
+    // inserito per età finisce in fondo a ogni ordinamento, come nato nell'anno 0.
+    const bare = text.trim();
+    if (/^\d{1,3}$/.test(bare)) {
+        const age = parseInt(bare, 10);
+        if (age <= 150) return today.getFullYear() - age;
+    }
     return 0;
 };
 
@@ -59,4 +67,25 @@ export const annoMorte = (str?: string): string => {
     if (quattro) return quattro[1];
     if (str.split(/[\/\-\.]/).length === 3) { const d = parseDate(str); if (d && !isNaN(d.getTime())) return String(d.getFullYear()); }
     return '';
+};
+
+/**
+ * Converte un'età digitata al posto della data nell'anno di nascita.
+ *
+ * Un'età scritta così resta congelata: "45" continua a dire 45 anche fra dieci
+ * anni, perché è salvata alla lettera. Convertendola quando si conferma il
+ * campo, da lì in poi si aggiorna da sé. Per una persona deceduta l'età è
+ * quella al decesso, quindi il conto parte dall'anno di morte e non da oggi.
+ *
+ * Tutto ciò che non è un'età nuda (una data, un anno, testo libero) torna
+ * indietro immutato.
+ */
+export const ageToBirthYear = (value: string, deathDate?: string, today = new Date()): string => {
+    const s = (value || '').trim();
+    if (!/^\d{1,3}$/.test(s)) return value;
+    const age = parseInt(s, 10);
+    if (age > 150) return value;
+    const ref = Number(annoMorte(deathDate)) || today.getFullYear();
+    const year = ref - age;
+    return year > 1700 && year <= today.getFullYear() ? String(year) : value;
 };

@@ -27,7 +27,7 @@ import { NOTE_BG_PALETTES, NOTE_TEXT_COLORS, NOTE_FONTS, PRESET_THEMES } from '.
 import { tinta, varsTema, copiaTemaInSvg, notaInTestoSvg } from './utils/tema';
 import { GRID_SIZE, SNAP_SIZE, CANVAS_SIZE, CENTER_POS, NODE_WIDTH, NODE_HEIGHT, MARRIAGE_BAR_Y } from './config/constants';
 import type { Gender, GenNode, RelationEdge, NodeGroup, CustomPreset, GenogramMeta, StickyNoteData, StructuralMap, ReportOptions } from './types';
-import { calculateAge, calculateAgeAtDeath, extractYear } from './utils/dates';
+import { calculateAge, calculateAgeAtDeath, extractYear, ageToBirthYear } from './utils/dates';
 import { generateId, findMarriageEdge } from './utils/genogram';
 import { computeGenogramLayout } from './layout/autoLayout';
 import { getGroupBounds, getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
@@ -1850,6 +1850,42 @@ export default function GenogramApp() {
         persistImportedGenograms([copy]);
     };
 
+    // --- CONNETTORI FIGLIO DOPPI ---
+    // Un figlio di una coppia ha DUE archi genitore-figlio, uno per genitore,
+    // ma entrambi partono dalla barra di coppia e arrivano allo stesso punto:
+    // disegnarli tutti e due vuol dire sovrapporre due tratti identici. Finché
+    // sono dello stesso tipo non si nota; se uno è biologico e l'altro è
+    // un'adozione — cioè appena si cambia il tipo da un lato solo — la linea
+    // continua copre quella punteggiata e il simbolo dell'adozione sparisce.
+    // Se ne disegna uno solo, scegliendo il tipo che porta informazione
+    // ('child-bio' è il valore di partenza, qualunque altro vince), e il
+    // click seleziona tutto il gruppo: per chi guarda quella è UNA relazione,
+    // e cambiarne il tipo o cancellarla deve agire su entrambi gli archi.
+    const childConnectors = useMemo(() => {
+        const byKey = new Map<string, string[]>();
+        const nodeIds = new Set(nodes.map(n => n.id));
+        edges.forEach(e => {
+            if (!e.type.startsWith('child')) return;
+            if (!nodeIds.has(e.fromId) || !nodeIds.has(e.toId)) return;
+            const m = findMarriageEdge(e.fromId, edges);
+            const key = `${m ? 'm:' + m.id : 'p:' + e.fromId}|${e.toId}`;
+            byKey.set(key, [...(byKey.get(key) || []), e.id]);
+        });
+        const group = new Map<string, string[]>();   // id rappresentante → archi del gruppo
+        const hidden = new Set<string>();
+        byKey.forEach(ids => {
+            if (ids.length < 2) return;
+            const rep = ids.find(id => edges.find(e => e.id === id)?.type !== 'child-bio') || ids[0];
+            group.set(rep, ids);
+            ids.forEach(id => { if (id !== rep) hidden.add(id); });
+        });
+        return { group, hidden };
+    }, [edges, nodes]);
+
+    // Tutti gli archi che il click su una relazione deve selezionare: da soli,
+    // o insieme al gemello nascosto quando è un connettore di figlio doppio.
+    const edgeGroupOf = (id: string) => childConnectors.group.get(id) || [id];
+
     const selectedNode = selectedNodeIds.length === 1 ? nodes.find(n => n.id === selectedNodeIds[0]) : null;
     const selectedEdge = edges.find(e => e.id === selectedEdgeIds[0]);
     const selectedGroup = groups.find(g => g.id === selectedGroupIds[0]);
@@ -2437,8 +2473,9 @@ export default function GenogramApp() {
                                         } else start = { x: fNode.x + NODE_WIDTH / 2, y: fNode.y + NODE_HEIGHT };
                                     }
 
+                                    if (childConnectors.hidden.has(e.id)) return null;
                                     const customConf = customPresets.find(p => p.id === e.type);
-                                    return <g key={e.id} onClick={(ev) => { ev.stopPropagation(); handleEdgeClick(e.id, ev); }}><ConnectionLine edge={e} start={start} end={end} isSelected={selectedEdgeIds.includes(e.id)} darkMode={darkMode} customConfig={customConf} onAddChild={(ev: any, eid: string) => handleEdgeAction(ev, eid)} isTargetGroup={groups.some(g => g.id === e.toId)} tNode={tNode} /></g>
+                                    return <g key={e.id} onClick={(ev) => { ev.stopPropagation(); handleEdgeClick(edgeGroupOf(e.id), ev); }}><ConnectionLine edge={e} start={start} end={end} isSelected={selectedEdgeIds.includes(e.id)} darkMode={darkMode} customConfig={customConf} onAddChild={(ev: any, eid: string) => handleEdgeAction(ev, eid)} isTargetGroup={groups.some(g => g.id === e.toId)} tNode={tNode} /></g>
                                 })}
 
                                 {/* MANIGLIE ANCORA: relazione selezionata con estremo su un gruppo.
@@ -2683,7 +2720,16 @@ export default function GenogramApp() {
                                         <input className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.religion || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, religion: e.target.value } : n))} placeholder="Religione" />
                                     </div>
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.ethnicity || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, ethnicity: e.target.value } : n))} placeholder="Etnia / origine culturale" />
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: e.target.value } : n))} placeholder="Nascita (Data, Anno o inserisci direttamente un'Età)" />
+                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate}
+                                        onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: e.target.value } : n))}
+                                        onBlur={e => {
+                                            // Un'età digitata qui diventa l'anno di nascita: scritta com'è
+                                            // resterebbe congelata, e fra due anni direbbe ancora la stessa cosa.
+                                            const conv = ageToBirthYear(e.target.value, selectedNode.deceased ? selectedNode.deathDate : undefined);
+                                            if (conv !== e.target.value) updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: conv } : n));
+                                        }}
+                                        placeholder="Nascita (Data, Anno o inserisci direttamente un'Età)"
+                                        title="Puoi scrivere una data (12/05/1981), un anno (1981) o direttamente l'età: l'età viene convertita nell'anno di nascita, così resta aggiornata col passare del tempo." />
                                     {selectedNode.deceased && (
                                         <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.deathDate || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, deathDate: e.target.value } : n))} placeholder="Morte (Data o Anno)" />
                                     )}
@@ -2784,15 +2830,15 @@ export default function GenogramApp() {
                                     <label className="text-xs opacity-50 font-bold block">Tipo Relazione</label>
                                     <RelationshipSelector value={selectedEdge.type} darkMode={darkMode} onChange={(t: string) => {
                                         const conf = BASE_REL_CONFIG[t] || {};
-                                        updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, type: t, color: conf.color, lineStyle: conf.lineStyle } : ed));
+                                        updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, type: t, color: conf.color, lineStyle: conf.lineStyle } : ed));
                                     }} className="text-black" />
 
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.label} onChange={e => updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, label: e.target.value } : ed))} placeholder="Etichetta" />
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.startDate || ''} onChange={e => updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, startDate: e.target.value } : ed))} placeholder="Inizio relazione (data o anno)" title="Usata dal layout C&M per ordinare cronologicamente i matrimoni multipli" />
+                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.label} onChange={e => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, label: e.target.value } : ed))} placeholder="Etichetta" />
+                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.startDate || ''} onChange={e => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, startDate: e.target.value } : ed))} placeholder="Inizio relazione (data o anno)" title="Usata dal layout C&M per ordinare cronologicamente i matrimoni multipli" />
 
-                                    <NotesPanel notes={selectedEdge.notes} onChange={newNotes => updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, notes: newNotes } : ed))} />
+                                    <NotesPanel notes={selectedEdge.notes} onChange={newNotes => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, notes: newNotes } : ed))} />
 
-                                    <button onClick={() => { updateEdges(edges.filter(e => e.id !== selectedEdge.id)); setSelectedEdgeIds([]); }} className="w-full bg-red-100 text-red-600 py-2 rounded text-xs hover:bg-red-200 mt-4 flex items-center justify-center gap-2"><Trash2 size={14} /> Elimina Relazione</button>
+                                    <button onClick={() => { updateEdges(edges.filter(e => !selectedEdgeIds.includes(e.id))); setSelectedEdgeIds([]); }} className="w-full bg-red-100 text-red-600 py-2 rounded text-xs hover:bg-red-200 mt-4 flex items-center justify-center gap-2"><Trash2 size={14} /> Elimina Relazione</button>
                                 </div>
                             )}
 

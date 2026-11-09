@@ -274,6 +274,32 @@ references) — non usarlo come verifica.
       biologico): dall'immagine si legge CHI è legato a chi, non come.
       Test: scripts/e2e-image-import.cjs (14 check).
 
+- [x] **Connettore del figlio: stile sulla discesa, non sulla barra**. Il
+      connettore è una L — un tratto lungo la barra dei fratelli, poi la
+      discesa al figlio — e veniva disegnato tutto nello stile della
+      relazione. Due conseguenze: i figli di una stessa coppia si
+      ridipingevano a vicenda il tratto orizzontale (vinceva l'ultimo
+      disegnato), e soprattutto un figlio di coppia ha DUE archi, uno per
+      genitore, che collassano sullo stesso connettore. Finché erano dello
+      stesso tipo non si notava; cambiando il tipo da un lato solo — un
+      genitore biologico e uno adottivo — la linea continua copriva quella
+      punteggiata e il simbolo dell'adozione spariva. Sembrava comparire solo
+      alla selezione perché l'arco selezionato è più spesso di 1px e i punti
+      sbordavano. Ora: barra dei fratelli sempre neutra (è struttura), stile
+      solo sulla discesa, e un connettore solo per figlio, col tipo che porta
+      informazione ('child-bio' è il valore di partenza, qualsiasi altro
+      vince). Il click seleziona entrambi gli archi, così cambiare tipo o
+      cancellare agisce sulla relazione intera e non lascia un arco orfano.
+      Test: scripts/e2e-child-lines.cjs (10 check).
+- [x] **Età digitata → anno di nascita** (`ageToBirthYear`): il campo nascita
+      accetta anche un'età, ma la salvava alla lettera, e "45" avrebbe detto
+      45 per sempre. Ora alla conferma del campo diventa l'anno di nascita, e
+      da lì in poi si aggiorna da sé; per un deceduto il conto parte dall'anno
+      di morte, perché quell'età è l'età al decesso. `extractYear` riconosce
+      la stessa convenzione, così i dati già inseriti per età non finiscono in
+      fondo a ogni ordinamento come nati nell'anno 0.
+      Test: dates.test.ts + scripts/e2e-age-field.cjs (6 check).
+
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.
 - Tipi puri con `import type` (verbatimModuleSyntax attivo).

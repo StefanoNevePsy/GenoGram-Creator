@@ -279,7 +279,17 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
         setQuickMenu(null);
     };
     const handleGroupDown = (e: any, id: string) => { e.stopPropagation(); e.preventDefault(); const { x, y } = getEventCoords(e); dragRef.current = { active: true, type: 'link', sourceId: id, startX: x, startY: y, currX: x, currY: y, pointerId: e.pointerId }; setDragState({ ...dragRef.current }); setQuickMenu(null); };
-    const handleEdgeClick = (edgeId: string, e: React.MouseEvent) => { e.stopPropagation(); setSelectedEdgeIds([edgeId]); setSelectedNodeIds([]); const edge = edges.find(ed => ed.id === edgeId); if (edge && ['marriage', 'cohabitation', 'separation', 'divorce'].includes(edge.type)) { setSelectedNodeIds([edge.fromId, edge.toId]); } };
+    // Accetta più archi perché una sola linea sul canvas può rappresentarne
+    // due (il connettore di un figlio, uno per genitore): selezionarne uno
+    // solo lascerebbe l'altro fuori da ogni modifica.
+    const handleEdgeClick = (edgeId: string | string[], e: React.MouseEvent) => {
+        e.stopPropagation();
+        const ids = Array.isArray(edgeId) ? edgeId : [edgeId];
+        setSelectedEdgeIds(ids);
+        setSelectedNodeIds([]);
+        const edge = edges.find(ed => ed.id === ids[0]);
+        if (edge && ['marriage', 'cohabitation', 'separation', 'divorce'].includes(edge.type)) { setSelectedNodeIds([edge.fromId, edge.toId]); }
+    };
 
     // --- GESTIONE MOVIMENTO GLOBALE E RILASCIO ---
     useEffect(() => {
