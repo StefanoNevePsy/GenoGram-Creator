@@ -64,7 +64,9 @@ const readEdges = page => page.evaluate(() => {
 
     const adopted = drops.find(p => p.d.startsWith('M 4040'));
     ok(!!adopted && adopted.dash === '2,2', `l'adozione è punteggiata senza doverla selezionare (${adopted && adopted.dash})`);
-    ok(!!adopted && adopted.stroke === '#0000FF', `e conserva il colore dell'adozione (${adopted && adopted.stroke})`);
+    // il colore passa per le variabili di tema, quindi si controlla il blu
+    // dell'adozione comunque sia espresso
+    ok(!!adopted && /#0000FF|geno-blu/i.test(adopted.stroke), `e conserva il colore dell'adozione (${adopted && adopted.stroke})`);
 
     const foster = drops.find(p => p.d.startsWith('M 4200'));
     ok(!!foster && foster.dash === '8,4', `l'affido resta tratteggiato (${foster && foster.dash})`);

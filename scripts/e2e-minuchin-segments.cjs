@@ -27,7 +27,9 @@ const { chromium } = require('playwright-core');
     const D = await hsegs(); console.log('dopo spegnimento dx:', JSON.stringify(D));
     ok(!D.some(x=>x.startsWith('280-550')), 'segmento DX spento → confine accorciato (nessun tratto 280-550)');
     ok(D.includes('10-280:solid'), 'il segmento SX rigido resta invariato');
-    await page.screenshot({ path: process.env.SP + '/segmenti.png' });
+    // Senza SP lo screenshot finiva in una cartella chiamata "undefined",
+    // dentro il repository.
+    if (process.env.SP) await page.screenshot({ path: process.env.SP + '/segmenti.png' });
     ok(errors.length===0, 'zero errori pagina');
     await b.close();
 })().catch(e => { console.error('FATAL', e.message); process.exit(1); });
