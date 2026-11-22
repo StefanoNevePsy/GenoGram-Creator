@@ -34,7 +34,7 @@ import { declutterLayout } from './layout/declutter';
 import { nodeFootprint } from './utils/footprint';
 import { inlineTextStyles, embedFonts } from './utils/exportStyle';
 import { getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
-import { Legend, RelationshipSelector, ConnectionLine, NodeShape, SelectionTransformer, StickyNoteShape } from './components/canvas';
+import { Legend, RelationshipSelector, ConnectionLine, isFreeRelation, NodeShape, SelectionTransformer, StickyNoteShape } from './components/canvas';
 import { QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector, StickyNotePropertiesPanel } from './components/panels';
 import { ReportModal, SettingsModal, InstructionsModal, StyleDesignerModal, ReportConfigModal } from './components/modals';
 import { parseFirebaseConfig } from './services/firebase';
@@ -291,6 +291,8 @@ export default function GenogramApp() {
         startX: number, startY: number, currX: number, currY: number,
         initialNodePositions?: any,
         anchorEnd?: 'from' | 'to', anchorGroupId?: string,
+        initialWaypoints?: Record<string, { x: number, y: number }[]>,
+        waypointIndex?: number,
         clientStartX?: number, clientStartY?: number,
         initialScrollLeft?: number, initialScrollTop?: number,
         initialPadding?: number,
@@ -1208,6 +1210,22 @@ export default function GenogramApp() {
     };
 
     // Layout Genogramma secondo Carter & McGoldrick (deterministico)
+    // Punti intermedi delle relazioni quando le persone si spostano in blocco:
+    // 'trasla' li sposta della media degli spostamenti dei due estremi (piccoli
+    // aggiustamenti), 'azzera' li toglie dove un estremo si è mosso (layout completo).
+    const puntiDopoSpostamento = (eds: RelationEdge[], prima: GenNode[], dopo: GenNode[], modo: 'trasla' | 'azzera') => {
+        const p0 = new Map(prima.map(n => [n.id, n])), p1 = new Map(dopo.map(n => [n.id, n]));
+        const delta = (id: string) => { const a = p0.get(id), b = p1.get(id); return a && b ? { x: b.x - a.x, y: b.y - a.y } : { x: 0, y: 0 }; };
+        return eds.map(e => {
+            if (!e.waypoints?.length) return e;
+            const a = delta(e.fromId), b = delta(e.toId);
+            if (!a.x && !a.y && !b.x && !b.y) return e;
+            if (modo === 'azzera') return { ...e, waypoints: undefined };
+            const dx = (a.x + b.x) / 2, dy = (a.y + b.y) / 2;
+            return { ...e, waypoints: e.waypoints.map(w => ({ x: w.x + dx, y: w.y + dy })) };
+        });
+    };
+
     // Dopo il layout C&M, che usa distanze uniformi, si fa spazio dove i nomi
     // si coprono e si collocano accanto ai loro collegati le persone fuori
     // dalla struttura (terapeuta, amici): vedi layout/declutter.ts.
@@ -1216,9 +1234,12 @@ export default function GenogramApp() {
         if (positions.size === 0) { alert("Nessuna struttura familiare da disporre (servono relazioni di coppia o figli)."); return; }
         const laid = nodes.map(n => { const p = positions.get(n.id); return p ? { ...n, x: p.x, y: p.y } : n; });
         const d = declutterLayout(laid, edges, stickyNotes, { snap: snapToGrid ? SNAP_SIZE : 0, recenter: true, satellites: 'all', groups, previous: nodes });
+        const finali = laid.map(n => { const p = d.positions.get(n.id)!; return { ...n, x: p.x, y: p.y }; });
         updateAll(
-            laid.map(n => { const p = d.positions.get(n.id)!; return { ...n, x: p.x, y: p.y }; }),
-            edges, groups,
+            finali,
+            // dopo un layout completo i punti intermedi messi per aggirare la
+            // vecchia disposizione non hanno più senso: la linea torna dritta
+            puntiDopoSpostamento(edges, nodes, finali, 'azzera'), groups,
             stickyNotes.map(sn => { const p = d.notes.get(sn.id); return p ? { ...sn, x: p.x, y: p.y } : sn; }),
         );
         if (warnings.length) console.warn('Layout C&M:', warnings);
@@ -1231,9 +1252,10 @@ export default function GenogramApp() {
     const evitaSovrapposizioni = () => {
         const d = declutterLayout(nodes, edges, stickyNotes, { snap: snapToGrid ? SNAP_SIZE : 0, recenter: false, satellites: 'overlapping', groups });
         if (d.moved === 0) { setLiveMessage('Nessuna sovrapposizione da risolvere'); return; }
+        const finali = nodes.map(n => { const p = d.positions.get(n.id)!; return { ...n, x: p.x, y: p.y }; });
         updateAll(
-            nodes.map(n => { const p = d.positions.get(n.id)!; return { ...n, x: p.x, y: p.y }; }),
-            edges, groups,
+            finali,
+            puntiDopoSpostamento(edges, nodes, finali, 'trasla'), groups,
             stickyNotes.map(sn => { const p = d.notes.get(sn.id); return p ? { ...sn, x: p.x, y: p.y } : sn; }),
         );
         setLiveMessage(d.moved === 1 ? 'Spostato 1 elemento per evitare sovrapposizioni' : `Spostati ${d.moved} elementi per evitare sovrapposizioni`);
@@ -1329,6 +1351,7 @@ export default function GenogramApp() {
         const bounds = getGraphBounds();
         const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
         inlineTextStyles(svgClone, svgRef.current);
+        svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
         const gElement = svgClone.querySelector('g');
         if (gElement) {
             gElement.setAttribute('transform', '');
@@ -1357,6 +1380,7 @@ export default function GenogramApp() {
 
         const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
         inlineTextStyles(svgClone, svgRef.current);
+        svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
         const gElement = svgClone.querySelector('g');
         if (gElement) {
             gElement.setAttribute('transform', '');
@@ -1447,6 +1471,7 @@ export default function GenogramApp() {
             // Clona l'SVG
             const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
             inlineTextStyles(svgClone, svgRef.current);
+            svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
 
             // 1. Determina il colore di sfondo attuale
             const bgColor = currentTheme.stile ? currentTheme.colors.bgMain : (darkMode ? '#111827' : '#ffffff'); // gray-900 vs white
@@ -1620,6 +1645,7 @@ export default function GenogramApp() {
             const bounds = getGraphBounds();
             const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
             inlineTextStyles(svgClone, svgRef.current);
+            svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
 
             // Reset trasformazioni per la stampa
             const gElement = svgClone.querySelector('g');
@@ -1904,6 +1930,67 @@ export default function GenogramApp() {
         const full = readFullGenogram(g);
         const copy: GenogramMeta = { ...full, id: generateId(), title: `${full.title} (copia)`, lastModified: Date.now() };
         persistImportedGenograms([copy]);
+    };
+
+    // Relazioni che si possono reinstradare con punti intermedi: tutte tranne
+    // coppia, figli e gemelli, che hanno un tracciato convenzionale.
+    const isReroutable = isFreeRelation;
+
+    // Estremi di una relazione come si disegnano: centri delle persone,
+    // perimetro dei gruppi (ancore comprese), barra di coppia per i figli.
+    // Usata dal disegno delle linee e dalle maniglie dei punti intermedi.
+    const endpointsOf = (e: RelationEdge) => {
+        let start = getEntityCenter(e.fromId, nodes, groups);
+        let end = getEntityCenter(e.toId, nodes, groups);
+        if (!start || !end) return null;
+
+        // con punti intermedi l'estremo su un gruppo guarda il punto
+        // intermedio più vicino, non l'altro estremo lontano
+        const wps = e.waypoints && e.waypoints.length ? e.waypoints : null;
+        const refForEnd = wps ? wps[wps.length - 1] : null;
+        const refForStart = wps ? wps[0] : null;
+
+        // 2. Intersezione TARGET
+        const tGroup = groups.find(g => g.id === e.toId);
+        if (tGroup) {
+            const geom = getGroupGeometry(tGroup, nodes);
+            if (geom) {
+                if (e.toAnchor !== undefined) {
+                    // Usa Math Bezier preciso con i punti di controllo
+                    end = getPointOnOrganicPerimeter(geom.controlPoints, e.toAnchor);
+                } else {
+                    // Auto (Closest Point su perimetro approssimato va bene per l'auto)
+                    end = getClosestPointOnPolygon(geom.expandedPoints, refForEnd || start);
+                }
+            }
+        }
+
+        // 3. Intersezione SOURCE
+        const sGroup = groups.find(g => g.id === e.fromId);
+        if (sGroup) {
+            const geom = getGroupGeometry(sGroup, nodes);
+            if (geom) {
+                if (e.fromAnchor !== undefined) {
+                    start = getPointOnOrganicPerimeter(geom.controlPoints, e.fromAnchor);
+                } else {
+                    start = getClosestPointOnPolygon(geom.expandedPoints, refForStart || end);
+                }
+            }
+        }
+
+        // ... Logica Nodi (child/marriage) rimane invariata ...
+        const fNode = nodes.find(n => n.id === e.fromId);
+        const tNode = nodes.find(n => n.id === e.toId);
+        const isTwin = e.type.startsWith('twin');
+        if ((e.type.startsWith('child') || isTwin) && fNode && tNode) {
+            const marriage = findMarriageEdge(e.fromId, edges);
+            if (marriage) {
+                const p1 = nodes.find(n => n.id === marriage.fromId); const p2 = nodes.find(n => n.id === marriage.toId);
+                if (p1 && p2) start = { x: (p1.x + p2.x + NODE_WIDTH) / 2, y: Math.max(p1.y, p2.y) + MARRIAGE_BAR_Y };
+            } else start = { x: fNode.x + NODE_WIDTH / 2, y: fNode.y + NODE_HEIGHT };
+        }
+
+        return { start, end, tNode };
     };
 
     // --- CONNETTORI FIGLIO DOPPI ---
@@ -2205,7 +2292,7 @@ export default function GenogramApp() {
             {showCategoryMenu && <div className="fixed inset-0 z-40" onClick={() => setShowCategoryMenu(false)} />}
 
             {/* --- HEADER --- */}
-            <div className="h-14 border-b flex items-center px-2 md:px-4 justify-between shrink-0 gap-2 relative z-50 overflow-visible theme-panel border-b theme-border">
+            <div className="h-14 border-b flex items-center px-2 md:px-4 justify-between shrink-0 gap-2 relative z-[60] overflow-visible theme-panel border-b theme-border">
 
                 {/* SINISTRA: Titolo e Categorie (Fissi) */}
                 <div className="flex gap-2 md:gap-3 items-center shrink-0">
@@ -2488,53 +2575,12 @@ export default function GenogramApp() {
 
                                 {/* ARCHI AGGIORNATI (V7 - Bezier Perfect Match) */}
                                 {edges.map(e => {
-                                    let start = getEntityCenter(e.fromId, nodes, groups);
-                                    let end = getEntityCenter(e.toId, nodes, groups);
-                                    if (!start || !end) return null;
-
-                                    // 2. Intersezione TARGET
-                                    const tGroup = groups.find(g => g.id === e.toId);
-                                    if (tGroup) {
-                                        const geom = getGroupGeometry(tGroup, nodes);
-                                        if (geom) {
-                                            if (e.toAnchor !== undefined) {
-                                                // Usa Math Bezier preciso con i punti di controllo
-                                                end = getPointOnOrganicPerimeter(geom.controlPoints, e.toAnchor);
-                                            } else {
-                                                // Auto (Closest Point su perimetro approssimato va bene per l'auto)
-                                                end = getClosestPointOnPolygon(geom.expandedPoints, start);
-                                            }
-                                        }
-                                    }
-
-                                    // 3. Intersezione SOURCE
-                                    const sGroup = groups.find(g => g.id === e.fromId);
-                                    if (sGroup) {
-                                        const geom = getGroupGeometry(sGroup, nodes);
-                                        if (geom) {
-                                            if (e.fromAnchor !== undefined) {
-                                                start = getPointOnOrganicPerimeter(geom.controlPoints, e.fromAnchor);
-                                            } else {
-                                                start = getClosestPointOnPolygon(geom.expandedPoints, end);
-                                            }
-                                        }
-                                    }
-
-                                    // ... Logica Nodi (child/marriage) rimane invariata ...
-                                    const fNode = nodes.find(n => n.id === e.fromId);
-                                    const tNode = nodes.find(n => n.id === e.toId);
-                                    const isTwin = e.type.startsWith('twin');
-                                    if ((e.type.startsWith('child') || isTwin) && fNode && tNode) {
-                                        const marriage = findMarriageEdge(e.fromId, edges);
-                                        if (marriage) {
-                                            const p1 = nodes.find(n => n.id === marriage.fromId); const p2 = nodes.find(n => n.id === marriage.toId);
-                                            if (p1 && p2) start = { x: (p1.x + p2.x + NODE_WIDTH) / 2, y: Math.max(p1.y, p2.y) + MARRIAGE_BAR_Y };
-                                        } else start = { x: fNode.x + NODE_WIDTH / 2, y: fNode.y + NODE_HEIGHT };
-                                    }
-
+                                    const ep = endpointsOf(e);
+                                    if (!ep) return null;
+                                    const { start, end, tNode } = ep;
                                     if (childConnectors.hidden.has(e.id)) return null;
                                     const customConf = customPresets.find(p => p.id === e.type);
-                                    return <g key={e.id} onClick={(ev) => { ev.stopPropagation(); handleEdgeClick(edgeGroupOf(e.id), ev); }}><ConnectionLine edge={e} start={start} end={end} isSelected={selectedEdgeIds.includes(e.id)} darkMode={darkMode} customConfig={customConf} onAddChild={(ev: any, eid: string) => handleEdgeAction(ev, eid)} isTargetGroup={groups.some(g => g.id === e.toId)} tNode={tNode} /></g>
+                                    return <g key={e.id} data-edge={e.id} onClick={(ev) => { ev.stopPropagation(); handleEdgeClick(edgeGroupOf(e.id), ev); }}><ConnectionLine edge={e} start={start} end={end} isSelected={selectedEdgeIds.includes(e.id)} darkMode={darkMode} customConfig={customConf} onAddChild={(ev: any, eid: string) => handleEdgeAction(ev, eid)} isTargetGroup={groups.some(g => g.id === e.toId)} tNode={tNode} /></g>
                                 })}
 
                                 {/* MANIGLIE ANCORA: relazione selezionata con estremo su un gruppo.
@@ -2657,6 +2703,59 @@ export default function GenogramApp() {
                                         </g>
                                     );
                                 })}
+
+                                {/* PUNTI INTERMEDI della relazione selezionata: un pallino per ogni
+                                    punto (trascina per spostarlo, doppio clic per toglierlo) e un "+"
+                                    a metà di ogni tratto (trascina per piegare lì la linea). Solo per
+                                    relazioni libere: coppia, figli e gemelli hanno un tracciato
+                                    convenzionale. data-ui: non finiscono nelle esportazioni. */}
+                                {selectedEdgeIds.length === 1 && (() => {
+                                    const ed = edges.find(x => x.id === selectedEdgeIds[0]);
+                                    if (!ed || !isReroutable(ed.type)) return null;
+                                    const ep = endpointsOf(ed);
+                                    if (!ep) return null;
+                                    const wps = ed.waypoints || [];
+                                    const pts = [ep.start, ...wps, ep.end];
+                                    const acc = currentTheme.colors.accent;
+                                    const k = 1 / Math.max(zoom, 0.35);   // maniglie di misura costante sullo schermo
+                                    const startDrag = (e: React.PointerEvent, index: number) => {
+                                        e.stopPropagation(); e.preventDefault();
+                                        const { x, y } = getEventCoords(e);
+                                        dragRef.current = { active: true, type: 'edge-waypoint', sourceId: ed.id, waypointIndex: index, startX: x, startY: y, currX: x, currY: y, pointerId: e.pointerId };
+                                        setDragState({ ...dragRef.current });
+                                    };
+                                    return <g data-ui="1">
+                                        {pts.slice(1).map((p, i) => {
+                                            const a = pts[i];
+                                            const m = { x: (a.x + p.x) / 2, y: (a.y + p.y) / 2 };
+                                            if (Math.hypot(p.x - a.x, p.y - a.y) < 50 * k) return null;   // tratto troppo corto per un "+"
+                                            return <g key={'add' + i} transform={`translate(${m.x},${m.y}) scale(${k})`} className="cursor-copy" style={{ touchAction: 'none' }}
+                                                onClick={ev => ev.stopPropagation()}
+                                                onPointerDown={ev => {
+                                                    setEdges(prev => prev.map(x => x.id === ed.id ? { ...x, waypoints: [...wps.slice(0, i), { x: Math.round(m.x), y: Math.round(m.y) }, ...wps.slice(i)] } : x));
+                                                    startDrag(ev, i);
+                                                }}>
+                                                <circle r={11} fill="transparent" />
+                                                <circle r={6.5} fill={currentTheme.colors.bgPanel} stroke={acc} strokeWidth={1.5} opacity={0.9} />
+                                                <path d="M -3 0 H 3 M 0 -3 V 3" stroke={acc} strokeWidth={1.6} strokeLinecap="round" />
+                                                <title>Trascina per piegare la linea qui</title>
+                                            </g>;
+                                        })}
+                                        {wps.map((w, i) => (
+                                            <g key={'wp' + i} transform={`translate(${w.x},${w.y}) scale(${k})`} className="cursor-move" style={{ touchAction: 'none' }}
+                                                onClick={ev => ev.stopPropagation()}
+                                                onPointerDown={ev => startDrag(ev, i)}
+                                                onDoubleClick={ev => {
+                                                    ev.stopPropagation();
+                                                    updateEdges(prev => prev.map(x => x.id === ed.id ? { ...x, waypoints: wps.filter((_, j) => j !== i) } : x));
+                                                }}>
+                                                <circle r={12} fill="transparent" />
+                                                <circle r={7} fill={acc} stroke="white" strokeWidth={2} style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
+                                                <title>Trascina per spostare il punto · doppio clic per toglierlo</title>
+                                            </g>
+                                        ))}
+                                    </g>;
+                                })()}
 
                                 {/* LEGENDA */}
                                 {(() => { if (!showLegend) return null; const b = getContentBounds(); return <Legend x={b.minX - 350} y={b.minY} darkMode={darkMode} nodes={nodes} edges={edges} />; })()}
@@ -2891,6 +2990,18 @@ export default function GenogramApp() {
                                         const conf = BASE_REL_CONFIG[t] || {};
                                         updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, type: t, color: conf.color, lineStyle: conf.lineStyle } : ed));
                                     }} className="text-black" />
+
+                                    {isFreeRelation(selectedEdge.type) && (
+                                        <div className="text-[11px] rounded-lg p-2 border theme-border" style={{ color: currentTheme.colors.textMuted }}>
+                                            {(selectedEdge.waypoints?.length || 0) > 0
+                                                ? <div className="flex items-center justify-between gap-2">
+                                                    <span>{selectedEdge.waypoints!.length === 1 ? '1 punto intermedio' : `${selectedEdge.waypoints!.length} punti intermedi`} · doppio clic su un punto per toglierlo</span>
+                                                    <button onClick={() => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, waypoints: undefined } : ed))}
+                                                        className="shrink-0 px-2 py-1 rounded border theme-border theme-hover font-semibold" style={{ color: currentTheme.colors.accent }}>Raddrizza</button>
+                                                </div>
+                                                : <span>Per far girare la linea attorno all'albero, trascina uno dei <b>+</b> che compaiono a metà della linea.</span>}
+                                        </div>
+                                    )}
 
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.label} onChange={e => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, label: e.target.value } : ed))} placeholder="Etichetta" />
                                     <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.startDate || ''} onChange={e => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, startDate: e.target.value } : ed))} placeholder="Inizio relazione (data o anno)" title="Usata dal layout C&M per ordinare cronologicamente i matrimoni multipli" />
