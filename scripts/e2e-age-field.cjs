@@ -21,7 +21,7 @@ const ok = (cond, msg) => { console.log((cond ? 'PASS' : 'FAIL') + ' ' + msg); i
     await page.click('[title="Nuovo Maschio (M)"]');
     await page.waitForTimeout(400);
 
-    const field = page.locator('input[placeholder^="Nascita"]');
+    const field = page.locator('label:has(span:text-is("Nascita")) input');
     ok(await field.count() === 1, 'il campo nascita è nel pannello della persona');
 
     const anno = new Date().getFullYear();

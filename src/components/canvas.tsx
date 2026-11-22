@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { tinta, ROSSO } from '../utils/tema';
 import { Plus, ChevronDown, Heart, Users, Waypoints } from 'lucide-react';
 import type { GenNode, RelationEdge, StickyNoteData } from '../types';
@@ -684,6 +684,36 @@ export const PersonSymbol = ({ node, darkMode, isSelected = false }: { node: Gen
     return <g>{Shape}<Issues />{IndexMark}{DeceasedMark}{InstitutionMark}{ImmigrationMark}{DonorMark}</g>;
 };
 
+// Adatta il riquadro di sfondo di un'etichetta al testo VERO, misurato dopo il
+// disegno e prima che si veda (useLayoutEffect). Si scrive direttamente sul
+// DOM: React non lo sovrascrive finché la stima di partenza non cambia, e
+// niente stato vuol dire niente secondo disegno. Si rimisura quando i font del
+// tema finiscono di caricarsi, perché il carattere di ripiego ha altre misure.
+const useFitLabel = (cx: number, text: string) => {
+    const rectRef = useRef<SVGRectElement>(null);
+    const textRef = useRef<SVGTextElement>(null);
+    useLayoutEffect(() => {
+        const fit = () => {
+            const t = textRef.current, r = rectRef.current;
+            if (!t || !r || !t.isConnected) return;
+            let len = 0;
+            try { len = t.getComputedTextLength(); } catch { return; }
+            if (!len) return;
+            const width = len + 8;
+            r.setAttribute('width', String(width));
+            r.setAttribute('x', String(cx - width / 2));
+        };
+        fit();
+        const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+        if (!fonts) return;
+        let alive = true;
+        fonts.ready.then(() => { if (alive) fit(); });
+        fonts.addEventListener?.('loadingdone', fit);
+        return () => { alive = false; fonts.removeEventListener?.('loadingdone', fit); };
+    }, [cx, text]);
+    return { rectRef, textRef };
+};
+
 export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, selectionMode, onRename, autoEdit = false, onAutoEdit }: any) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(node.name);
@@ -765,17 +795,21 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
     // Centriamo il testo verticalmente nel rect usando dominantBaseline="middle"
     const TextLabel = ({ y, text, size, bold }: { y: number, text: string, size: number, bold?: boolean }) => {
         if (!text) return null;
-        // Stima larghezza basata su font size medio
+        // Larghezza stimata per il primo disegno; poi si misura il testo vero
+        // (vedi useFitLabel): la stima a 0.65·corpo è larga, e il riquadro
+        // sporgeva oltre il nome coprendo linee e vicini.
         const charW = size * 0.65;
         const width = (text.length * charW) + 8;
         const height = size + 4; // Altezza box proporzionale
+        const { rectRef, textRef } = useFitLabel(w / 2, text);
 
         return (
             <g pointerEvents="none">
                 {/* Il rect è centrato verticalmente attorno a Y */}
-                <rect x={w / 2 - width / 2} y={y - height / 2} width={width} height={height} fill={textBg} fillOpacity="0.9" rx="3" />
+                <rect ref={rectRef} x={w / 2 - width / 2} y={y - height / 2} width={width} height={height} fill={textBg} fillOpacity="0.9" rx="3" />
                 {/* Il testo è centrato verticalmente su Y */}
                 <text
+                    ref={textRef}
                     x={w / 2}
                     y={y}
                     dominantBaseline="middle"
@@ -841,18 +875,20 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
             {node.notes && node.notes.length > 0 && <circle cx={w + 5} cy={0} r={4} fill="var(--geno-rosso, #ef4444)" stroke={textBg} strokeWidth={1} />}
 
             {isSelected && !selectionMode && !isEditing && (
-                <g>
+                // le maniglie stanno FUORI dalle scritte: "genitori" sopra il nome,
+                // "figlio" sotto croce, etichetta e professione (prima le coprivano)
+                <g data-ui="1">
                     <g transform={`translate(${w + 20}, ${r})`} onPointerDown={(e) => onH(e, 'spouse')} className="cursor-crosshair hover:opacity-80" style={{ touchAction: 'none' }}>
                         <circle r={14} fill={darkMode ? '#333' : 'white'} stroke="#db2777" strokeWidth={2} />
                         <Heart size={14} x={-7} y={-7} fill="#db2777" stroke="#db2777" />
                         <title>Coniuge</title>
                     </g>
-                    <g transform={`translate(${r}, ${h + 25})`} onPointerDown={(e) => onH(e, 'child')} className="cursor-crosshair hover:opacity-80" style={{ touchAction: 'none' }}>
+                    <g transform={`translate(${r}, ${h + 25 + extraY + (node.label ? 13 : 0) + (node.profession ? 12 : 0)})`} onPointerDown={(e) => onH(e, 'child')} className="cursor-crosshair hover:opacity-80" style={{ touchAction: 'none' }}>
                         <circle r={14} fill={darkMode ? '#333' : 'white'} stroke="#10b981" strokeWidth={2} />
                         <Plus size={14} x={-7} y={-7} color="#10b981" strokeWidth={3} />
                         <title>Figlio</title>
                     </g>
-                    <g transform={`translate(${r}, -25)`} onPointerDown={(e) => onH(e, 'parents')} className="cursor-crosshair hover:opacity-80" style={{ touchAction: 'none' }}>
+                    <g transform={`translate(${r}, ${node.name ? -36 : -25})`} onPointerDown={(e) => onH(e, 'parents')} className="cursor-crosshair hover:opacity-80" style={{ touchAction: 'none' }}>
                         <circle r={14} fill={darkMode ? '#333' : 'white'} stroke="#8b5cf6" strokeWidth={2} />
                         <Users size={14} x={-7} y={-7} color="#8b5cf6" />
                         <title>Genitori</title>

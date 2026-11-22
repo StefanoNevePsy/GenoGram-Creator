@@ -379,3 +379,13 @@ export const StickyNotePropertiesPanel = ({
         </div>
     );
 };
+
+// Campo con il suo titolo sempre visibile. Prima l'unica etichetta era il
+// placeholder: appena compilato, "1965" non diceva più se fosse la nascita,
+// la morte o l'anno di immigrazione.
+export const Campo = ({ titolo, children, className = '' }: { titolo: string, children: React.ReactNode, className?: string }) => (
+    <label className={`block min-w-0 ${className}`}>
+        <span className="block text-[10px] font-semibold leading-none mb-1 opacity-60">{titolo}</span>
+        {children}
+    </label>
+);

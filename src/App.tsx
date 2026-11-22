@@ -35,7 +35,7 @@ import { nodeFootprint } from './utils/footprint';
 import { inlineTextStyles, embedFonts } from './utils/exportStyle';
 import { getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
 import { Legend, RelationshipSelector, ConnectionLine, isFreeRelation, NodeShape, SelectionTransformer, StickyNoteShape } from './components/canvas';
-import { QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector, StickyNotePropertiesPanel } from './components/panels';
+import { QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector, StickyNotePropertiesPanel, Campo } from './components/panels';
 import { ReportModal, SettingsModal, InstructionsModal, StyleDesignerModal, ReportConfigModal } from './components/modals';
 import { parseFirebaseConfig } from './services/firebase';
 import { useGenogramHistory } from './hooks/useHistory';
@@ -788,7 +788,21 @@ export default function GenogramApp() {
     // senza Firebase l'elenco non si aggiorna da solo: si rilegge tornando alla dashboard
     useEffect(() => { if (view === 'dashboard' && (!user || !db)) setGenograms(readLocalIndex().map(readFullGenogram)); }, [view]);
 
-    useLayoutEffect(() => { if (view === 'editor' && containerRef.current) setTimeout(() => { if (containerRef.current) containerRef.current.scrollTo(CENTER_POS - containerRef.current.clientWidth / 2, CENTER_POS - containerRef.current.clientHeight / 2); }, 100); }, [view]);
+    // Aprendo un genogramma si inquadra il DISEGNO, non il centro del foglio:
+    // un genogramma che sta altrove, o più grande dello schermo (sul telefono
+    // quasi sempre), si apriva mostrandone un pezzo o niente. Mai oltre il
+    // 100%, e non sotto il 40%, dove i nomi diventano illeggibili.
+    useLayoutEffect(() => {
+        if (view !== 'editor') return;
+        const t = setTimeout(() => {
+            const c = containerRef.current;
+            if (!c) return;
+            if (nodesRef.current.length === 0 && stickyNotesRef.current.length === 0) {
+                c.scrollTo(CENTER_POS - c.clientWidth / 2, CENTER_POS - c.clientHeight / 2);
+            } else inquadra({ maxZoom: 1, minZoom: 0.4, smooth: false });
+        }, 100);
+        return () => clearTimeout(t);
+    }, [view]);
     const handleSave = () => {
         // Niente alert() su dati clinici: il salvataggio e' gia' automatico, lo
         // confermiamo con un messaggio effimero accanto all'indicatore di sync.
@@ -1265,19 +1279,20 @@ export default function GenogramApp() {
     const centerView = () => { setZoom(1); if (containerRef.current) { containerRef.current.scrollTo({ left: CENTER_POS - containerRef.current.clientWidth / 2, top: CENTER_POS - containerRef.current.clientHeight / 2, behavior: 'smooth' }); } };
 
     // Zoom-to-fit: inquadra tutto il contenuto con un click
-    const fitView = () => {
+    const inquadra = (opts: { maxZoom: number, minZoom: number, smooth: boolean }) => {
         const c = containerRef.current; if (!c) return;
         const b = contentBoundsOf(nodesRef.current, groupsRef.current, stickyNotesRef.current);
         const pad = 100;
         const w = (b.maxX - b.minX) + pad * 2;
         const h = (b.maxY - b.minY) + pad * 2;
-        const newZoom = Math.min(3, Math.max(0.2, Math.min(c.clientWidth / w, c.clientHeight / h)));
+        const newZoom = Math.min(opts.maxZoom, Math.max(opts.minZoom, Math.min(c.clientWidth / w, c.clientHeight / h)));
         setZoom(newZoom);
         // Lo scale ha origine in CENTER_POS: un punto grafo (x,y) appare a CENTER_POS + (x - CENTER_POS) * zoom
         const cx = CENTER_POS + ((b.minX + b.maxX) / 2 - CENTER_POS) * newZoom;
         const cy = CENTER_POS + ((b.minY + b.maxY) / 2 - CENTER_POS) * newZoom;
-        c.scrollTo({ left: cx - c.clientWidth / 2, top: cy - c.clientHeight / 2, behavior: 'smooth' });
+        c.scrollTo({ left: cx - c.clientWidth / 2, top: cy - c.clientHeight / 2, behavior: opts.smooth ? 'smooth' : 'auto' });
     };
+    const fitView = () => inquadra({ maxZoom: 3, minZoom: 0.2, smooth: true });
 
     // Confini del contenuto (persone con i loro nomi, gruppi, note). Riceve i
     // dati invece di leggerli dallo stato: l'inquadratura chiamata subito
@@ -2136,10 +2151,12 @@ export default function GenogramApp() {
                             {/* L'azione principale resta nell'header su mobile: dentro il drawer
                                 sarebbe stata a due tap e nascosta. */}
                             <button onClick={handleNewGenogram} title="Nuovo genogramma" aria-label="Nuovo genogramma"
-                                className="gp-nuovo md:hidden text-white px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-medium shrink-0 shadow-sm"
+                                className="gp-nuovo md:hidden mr-auto text-white px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-medium shrink-0 shadow-sm"
                                 style={{ backgroundColor: 'var(--theme-accent)' }}><Plus size={16} /> Nuovo</button>
-                            <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-[200px] max-w-2xl">
-                                <div className="relative flex-1">
+                            {/* su telefono la ricerca va su una riga sua, a tutta larghezza: prima
+                                andava a capo a metà lasciando sola l'icona dello schermo intero */}
+                            <div className="flex items-center gap-2 md:gap-4 flex-1 basis-full order-last md:basis-auto md:order-none min-w-[200px] max-w-2xl">
+                                <div className="relative flex-1 min-w-0">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 opacity-50" size={18} />
                                     <input
                                         className="gp-cerca w-full pl-10 pr-4 py-2 rounded-lg border theme-border bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 theme-text placeholder-opacity-50 placeholder-current"
@@ -2167,7 +2184,7 @@ export default function GenogramApp() {
                                     const catDef = categories.find(c => c.id === g.category) || categories[categories.length - 1];
                                     const Icon = ICON_MAP[catDef.iconKey] || Tag;
                                     return (
-                                        <div key={g.id} onClick={() => apriNellEditor(g)} className="gp-scheda group relative theme-panel rounded-xl shadow-sm hover:shadow-md transition-all border theme-border cursor-pointer overflow-hidden flex flex-col h-48">
+                                        <div key={g.id} onClick={() => apriNellEditor(g)} role="button" tabIndex={0} aria-label={`Apri ${g.title}`} onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); apriNellEditor(g); } }} className="gp-scheda group relative theme-panel rounded-xl shadow-sm hover:shadow-md transition-all border theme-border cursor-pointer overflow-hidden flex flex-col h-48">
                                             <div className="gp-fascia absolute top-0 left-0 w-1.5 h-full" style={{ backgroundColor: catDef.color }} />
                                             <span className="gp-num" aria-hidden="true">{String(gi + 1).padStart(2, '0')}</span>
                                             <div className="p-5 flex-1 flex flex-col">
@@ -2175,7 +2192,10 @@ export default function GenogramApp() {
                                                     <div className="gp-scheda-cat flex items-center gap-2 text-xs font-bold uppercase tracking-wider" style={{ color: catDef.color, ['--cat' as any]: catDef.color }}>
                                                         <Icon size={12} /> {catDef.label}
                                                     </div>
-                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    {/* azioni al passaggio del mouse; dove il mouse non c'è (telefono,
+                                                        tablet, APK) restano sempre visibili, e con la tastiera
+                                                        compaiono quando la scheda ha il focus */}
+                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
                                                         {pontePossibile() && <button aria-label={`Invia «${g.title}» a PsyDiary`} title="Invia a PsyDiary" onClick={(e) => { e.stopPropagation(); inviaPsy(readFullGenogram(g)); }} className="text-gray-400 hover:text-blue-500"><Send size={16} /></button>}
                                                         <button aria-label="Esporta file" title="Esporta file" onClick={(e) => { e.stopPropagation(); exportSingleGenogram(g); }} className="text-gray-400 hover:text-blue-500"><Download size={16} /></button>
                                                         <button aria-label="Duplica" title="Duplica" onClick={(e) => { e.stopPropagation(); duplicateGenogram(g); }} className="text-gray-400 hover:text-green-600"><Copy size={16} /></button>
@@ -2591,7 +2611,7 @@ export default function GenogramApp() {
                                     if (!ed) return null;
                                     const acc = currentTheme.colors.accent;
                                     const ends: ('from' | 'to')[] = ['from', 'to'];
-                                    return <g>{ends.map(end => {
+                                    return <g data-ui="1">{ends.map(end => {
                                         const gid = end === 'from' ? ed.fromId : ed.toId;
                                         const g = groups.find(x => x.id === gid);
                                         if (!g) return null;
@@ -2773,7 +2793,7 @@ export default function GenogramApp() {
                                     const blobMaxY = Math.max(...geom.expandedPoints.map(p => p.y));
 
                                     return (
-                                        <g key={`handles-${g.id}`}>
+                                        <g key={`handles-${g.id}`} data-ui="1">
                                             {/* 1. Maniglia LINK (Gialla - Sinistra, fuori dal blob) */}
                                             <g transform={`translate(${blobMinX - 18}, ${cy})`}
                                                 className="cursor-crosshair"
@@ -2866,19 +2886,19 @@ export default function GenogramApp() {
                             {selectedNode && (
                                 <div className="space-y-3 animate-in fade-in slide-in-from-right-4 duration-200">
                                     <div className="text-[9px] font-bold uppercase opacity-45">Anagrafica</div>
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border font-bold" value={selectedNode.name} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, name: e.target.value } : n))} placeholder="Nome" />
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.label || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, label: e.target.value } : n))} placeholder="Etichetta (es. Padre)" />
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.profession || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, profession: e.target.value } : n))} placeholder="Professione" />
+                                    <Campo titolo="Nome"><input className="w-full border p-1 rounded bg-transparent theme-border font-bold" value={selectedNode.name} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, name: e.target.value } : n))} placeholder="Nome" /></Campo>
+                                    <Campo titolo="Etichetta"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.label || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, label: e.target.value } : n))} placeholder="es. Padre, Madre" /></Campo>
+                                    <Campo titolo="Professione"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.profession || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, profession: e.target.value } : n))} placeholder="" /></Campo>
                                     <div className="flex gap-2">
-                                        <input type="number" min="1" className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.birthOrder ?? ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthOrder: e.target.value === '' ? undefined : parseInt(e.target.value) } : n))} placeholder="Ordine nascita" title="Ordine di nascita esplicito: usato dal layout C&M quando mancano le date" />
-                                        <input className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.immigrationYear || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, immigrationYear: e.target.value } : n))} placeholder="Anno immigrazione" />
+                                        <Campo titolo="Ordine di nascita" className="w-1/2"><input type="number" min="1" className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthOrder ?? ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthOrder: e.target.value === '' ? undefined : parseInt(e.target.value) } : n))} placeholder="es. 2" title="Ordine di nascita esplicito: usato dal layout C&M quando mancano le date" /></Campo>
+                                        <Campo titolo="Anno immigrazione" className="w-1/2"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.immigrationYear || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, immigrationYear: e.target.value } : n))} placeholder="" /></Campo>
                                     </div>
                                     <div className="flex gap-2">
-                                        <input className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.education || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, education: e.target.value } : n))} placeholder="Titolo di studio" />
-                                        <input className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.religion || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, religion: e.target.value } : n))} placeholder="Religione" />
+                                        <Campo titolo="Titolo di studio" className="w-1/2"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.education || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, education: e.target.value } : n))} placeholder="" /></Campo>
+                                        <Campo titolo="Religione" className="w-1/2"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.religion || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, religion: e.target.value } : n))} placeholder="" /></Campo>
                                     </div>
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.ethnicity || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, ethnicity: e.target.value } : n))} placeholder="Etnia / origine culturale" />
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate}
+                                    <Campo titolo="Etnia / origine culturale"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.ethnicity || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, ethnicity: e.target.value } : n))} placeholder="" /></Campo>
+                                    <Campo titolo="Nascita"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate}
                                         onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: e.target.value } : n))}
                                         onBlur={e => {
                                             // Un'età digitata qui diventa l'anno di nascita: scritta com'è
@@ -2886,13 +2906,13 @@ export default function GenogramApp() {
                                             const conv = ageToBirthYear(e.target.value, selectedNode.deceased ? selectedNode.deathDate : undefined);
                                             if (conv !== e.target.value) updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: conv } : n));
                                         }}
-                                        placeholder="Nascita (Data, Anno o inserisci direttamente un'Età)"
-                                        title="Puoi scrivere una data (12/05/1981), un anno (1981) o direttamente l'età: l'età viene convertita nell'anno di nascita, così resta aggiornata col passare del tempo." />
+                                        placeholder="data, anno oppure l'età"
+                                        title="Puoi scrivere una data (12/05/1981), un anno (1981) o direttamente l'età: l'età viene convertita nell'anno di nascita, così resta aggiornata col passare del tempo." /></Campo>
                                     {selectedNode.deceased && (
-                                        <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.deathDate || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, deathDate: e.target.value } : n))} placeholder="Morte (Data o Anno)" />
+                                        <Campo titolo="Morte"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.deathDate || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, deathDate: e.target.value } : n))} placeholder="data o anno" /></Campo>
                                     )}
                                     {selectedNode.deceased && (
-                                        <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.causeOfDeath || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, causeOfDeath: e.target.value } : n))} placeholder="Causa del decesso" />
+                                        <Campo titolo="Causa del decesso"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.causeOfDeath || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, causeOfDeath: e.target.value } : n))} placeholder="" /></Campo>
                                     )}
 
                                     <div className="text-[9px] font-bold uppercase opacity-45 pt-2">Visualizzazione</div>
@@ -2909,13 +2929,13 @@ export default function GenogramApp() {
                                         Età: {selectedNode.deceased && selectedNode.deathDate ? `${calculateAgeAtDeath(selectedNode.birthDate, selectedNode.deathDate)} (al decesso)` : calculateAge(selectedNode.birthDate)}
                                     </div>
 
-                                    <select className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.gender} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, gender: e.target.value as Gender } : n))}>
+                                    <Campo titolo="Genere"><select className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.gender} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, gender: e.target.value as Gender } : n))}>
                                         <option value="M" className="text-black">Maschio</option><option value="F" className="text-black">Femmina</option>
                                         <option value="TransWoman" className="text-black">Donna Trans (MTF)</option>
                                         <option value="TransMan" className="text-black">Uomo Trans (FTM)</option>
                                         <option value="NonBinary" className="text-black">Non-Binary/Genderqueer</option>
                                         <option value="Pet" className="text-black">Animale</option><option value="Pregnancy" className="text-black">Gravidanza</option><option value="Miscarriage" className="text-black">Aborto Spontaneo</option><option value="Abortion" className="text-black">Aborto Volontario</option><option value="Stillbirth" className="text-black">Morto alla nascita</option>
-                                    </select>
+                                    </select></Campo>
 
                                     <div className="text-[9px] font-bold uppercase opacity-45 pt-2">Marcatori clinici</div>
                                     <div className="grid grid-cols-2 gap-2">
@@ -3003,8 +3023,8 @@ export default function GenogramApp() {
                                         </div>
                                     )}
 
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.label} onChange={e => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, label: e.target.value } : ed))} placeholder="Etichetta" />
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.startDate || ''} onChange={e => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, startDate: e.target.value } : ed))} placeholder="Inizio relazione (data o anno)" title="Usata dal layout C&M per ordinare cronologicamente i matrimoni multipli" />
+                                    <Campo titolo="Etichetta"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.label} onChange={e => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, label: e.target.value } : ed))} placeholder="" /></Campo>
+                                    <Campo titolo="Inizio relazione"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.startDate || ''} onChange={e => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, startDate: e.target.value } : ed))} placeholder="data o anno" title="Usata dal layout C&M per ordinare cronologicamente i matrimoni multipli" /></Campo>
 
                                     <NotesPanel notes={selectedEdge.notes} onChange={newNotes => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, notes: newNotes } : ed))} />
 

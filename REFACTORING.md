@@ -300,8 +300,39 @@ references) — non usarlo come verifica.
       fondo a ogni ordinamento come nati nell'anno 0.
       Test: dates.test.ts + scripts/e2e-age-field.cjs (6 check).
 
+- [x] **Contorno dei gruppi** (`utils/groupShape.ts`, `utils/footprint.ts`): curva
+      di livello di un campo invece dell'inviluppo convesso gonfiato dal baricentro.
+      Margine uniforme, file di fratelli come capsule, forme a L che non inglobano
+      estranei, membri lontani legati da un collo che aggira chi sta in mezzo.
+      Test: groupShape.test.ts.
+- [x] **Font del tema nelle esportazioni** (`utils/exportStyle.ts`): stile calcolato
+      scritto sul testo della copia e font incorporati in base64 (un SVG disegnato
+      come immagine non può caricarne di esterni). Tutte e cinque le vie
+      d'esportazione. Test: scripts/e2e-export-fonts.cjs.
+- [x] **Distribuzione senza sovrapposizioni** (`layout/declutter.ts`): spazio ai
+      nomi per riga con i discendenti che seguono, ricentratura delle coppie,
+      satelliti accanto a chi sono collegati (mai dentro un gruppo altrui), note
+      che non coprono persone. Eseguito dal layout C&M e dal pulsante "Evita
+      sovrapposizioni". Test: declutter.test.ts.
+- [x] **Punti intermedi sulle relazioni** (`utils/edgeRoute.ts`): "+" a metà dei
+      tratti per piegare la linea, pallini trascinabili, doppio clic o "Raddrizza"
+      per toglierli. Frecce, simboli centrali e zigzag seguono il percorso; linee
+      doppie e triple ora davvero parallele. Test: edgeRoute.test.ts,
+      scripts/e2e-waypoints.cjs.
+- [x] **Audit UI/UX**: menu di esportazione coperto dal pannello; maniglie della
+      persona sopra nome e croce; riquadri dei nomi misurati sul testo vero;
+      campi del pannello con titolo; inquadratura del disegno all'apertura e dopo
+      i layout (prima usava lo stato vecchio); limiti delle esportazioni col nome
+      intero; azioni delle schede visibili su touch; scheda apribile da tastiera;
+      intestazione della dashboard su telefono; maniglie escluse dalle
+      esportazioni. Test: scripts/e2e-ui-fixes.cjs.
+
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.
 - Tipi puri con `import type` (verbatimModuleSyntax attivo).
 - Lo stato resta in GenogramApp e scende via props/hook dedicati.
 - Nuovi campi su GenNode/RelationEdge sempre opzionali (retrocompatibilità dati).
+- Elementi d'interfaccia disegnati nell'SVG (maniglie, controlli) portano
+  `data-ui="1"`: le esportazioni li tolgono.
+- Gli script e2e usano `/opt/pw-browsers/chromium` (collegamento stabile), non un
+  percorso con la versione.
