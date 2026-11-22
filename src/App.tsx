@@ -8,7 +8,7 @@ import {
     AlignJustify, CircleDashed, FileText, Search, RotateCcw, RotateCw,
     Filter, SortAsc, Tag, HelpCircle,
     Target, Grid3X3, TrendingUp, Image as ImageIcon, FileImage, Check, Info,
-    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy, Baby, Shapes, Boxes, Menu, Send, ScanLine, AlignHorizontalSpaceAround // <--- Network aggiunto qui
+    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy, Baby, Shapes, Boxes, Menu, Send, ScanLine, AlignHorizontalSpaceAround, CircleDot, Eye, EyeOff // <--- Network aggiunto qui
 } from 'lucide-react';
 import { StatusBar } from '@capacitor/status-bar';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -31,6 +31,10 @@ import { calculateAge, calculateAgeAtDeath, extractYear, ageToBirthYear } from '
 import { generateId, findMarriageEdge } from './utils/genogram';
 import { computeGenogramLayout } from './layout/autoLayout';
 import { declutterLayout } from './layout/declutter';
+import { CircumplexChart, CircumplexGlyph } from './components/circumplex';
+import type { CircumplexColori } from './components/circumplex';
+import { VALORI_INIZIALI, livelloCoesione, livelloFlessibilita, tipoSistema, descriviCircumplex, clamp100 } from './utils/circumplex';
+import type { CircumplexValues } from './utils/circumplex';
 import { nodeFootprint } from './utils/footprint';
 import { inlineTextStyles, embedFonts } from './utils/exportStyle';
 import { getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
@@ -427,6 +431,10 @@ export default function GenogramApp() {
 
     const [snapToGrid, setSnapToGrid] = useState(() => localStorage.getItem('genopro_snap') !== 'false');
     const [showLabels, setShowLabels] = useState<'age' | 'year' | 'date' | 'none'>(() => (localStorage.getItem('genopro_labels') as any) || 'age');
+    // Popover "Valutazioni circonflesse": elenco dei gruppi di Olson, anche quelli nascosti dal disegno
+    const [showCircPanel, setShowCircPanel] = useState(false);
+    const circPanelRef = useRef<HTMLDivElement>(null);
+    const circBtnRef = useRef<HTMLButtonElement>(null);
     const [showLegend, setShowLegend] = useState(() => localStorage.getItem('genopro_legend') === 'true');
 
     // Effetti per salvare le preferenze
@@ -1247,7 +1255,7 @@ export default function GenogramApp() {
         const { positions, warnings } = computeGenogramLayout(nodes, edges, { centerX: CENTER_POS, centerY: CENTER_POS, snap: SNAP_SIZE });
         if (positions.size === 0) { alert("Nessuna struttura familiare da disporre (servono relazioni di coppia o figli)."); return; }
         const laid = nodes.map(n => { const p = positions.get(n.id); return p ? { ...n, x: p.x, y: p.y } : n; });
-        const d = declutterLayout(laid, edges, stickyNotes, { snap: snapToGrid ? SNAP_SIZE : 0, recenter: true, satellites: 'all', groups, previous: nodes });
+        const d = declutterLayout(laid, edges, stickyNotes, { snap: snapToGrid ? SNAP_SIZE : 0, recenter: true, satellites: 'all', groups: groups.filter(g => !g.hidden), previous: nodes });
         const finali = laid.map(n => { const p = d.positions.get(n.id)!; return { ...n, x: p.x, y: p.y }; });
         updateAll(
             finali,
@@ -1264,7 +1272,7 @@ export default function GenogramApp() {
     // persone (con i loro nomi) si coprono, e sposta satelliti e note solo se
     // coprono qualcosa. Rispetta una disposizione fatta a mano.
     const evitaSovrapposizioni = () => {
-        const d = declutterLayout(nodes, edges, stickyNotes, { snap: snapToGrid ? SNAP_SIZE : 0, recenter: false, satellites: 'overlapping', groups });
+        const d = declutterLayout(nodes, edges, stickyNotes, { snap: snapToGrid ? SNAP_SIZE : 0, recenter: false, satellites: 'overlapping', groups: groups.filter(g => !g.hidden) });
         if (d.moved === 0) { setLiveMessage('Nessuna sovrapposizione da risolvere'); return; }
         const finali = nodes.map(n => { const p = d.positions.get(n.id)!; return { ...n, x: p.x, y: p.y }; });
         updateAll(
@@ -1317,6 +1325,7 @@ export default function GenogramApp() {
         // rettangolo dei membri: il contorno sporge di un padding, e i colli
         // fra membri lontani possono girare attorno a chi sta in mezzo
         groups.forEach(g => {
+            if (g.hidden) return;   // un gruppo nascosto non si disegna: non deve allargare l'inquadratura
             const geom = getGroupGeometry(g, nodes);
             if (!geom) return;
             const b = geom.bounds;
@@ -1680,6 +1689,18 @@ export default function GenogramApp() {
 
             // Genera il contenuto testuale usando le opzioni
             const reportHtml = generateReportHTML(nodes, edges, groups, options);
+            // Il circonflesso valuta il SISTEMA, non le singole persone: una sezione
+            // sola, con i membri, invece della stessa riga ripetuta nella scheda di
+            // ciascuno. Ci sono anche i gruppi nascosti nel disegno: nasconderli
+            // serve a non affollare il canvas, la valutazione resta clinica.
+            const olsonGroups = groups.filter(g => g.type === 'circumplex');
+            const olsonHtml = (options.showGroups && olsonGroups.length > 0)
+                ? `<h2 style="margin-top:24px">Circonflesso di Olson</h2>` + olsonGroups.map(g => {
+                    const membri = nodes.filter(n => g.memberIds.includes(n.id)).map(n => n.name || 'Senza nome').join(', ');
+                    const data = g.circumplex?.date ? ` <span style="color:#666">(valutazione del ${g.circumplex.date})</span>` : '';
+                    return `<div class="person-card"><h3>${g.label}${data}</h3><p>${descriviCircumplex(g.circumplex ?? VALORI_INIZIALI)}</p><p style="color:#666">Membri: ${membri}</p></div>`;
+                }).join('')
+                : '';
             const mapsHtml = (options.showMaps && structuralMaps.length > 0)
                 ? `<h2 style="margin-top:24px">Mappe Strutturali (Minuchin)</h2>` + structuralMaps.map(mp =>
                     `<div class="person-card"><h3>${mp.label}</h3>${mapToSvgString(mp, nodes)}</div>`).join('')
@@ -1767,6 +1788,7 @@ export default function GenogramApp() {
                   
                   <h2 style="margin-top:30px; border-bottom:1px solid #eee;">Dettaglio Clinico</h2>
                   ${reportHtml}
+                  ${olsonHtml}
                   ${mapsHtml}
               </body>
               </html>
@@ -1955,6 +1977,8 @@ export default function GenogramApp() {
     // perimetro dei gruppi (ancore comprese), barra di coppia per i figli.
     // Usata dal disegno delle linee e dalle maniglie dei punti intermedi.
     const endpointsOf = (e: RelationEdge) => {
+        // una relazione verso un gruppo nascosto non ha più dove appoggiarsi
+        if (groups.some(g => g.hidden && (g.id === e.fromId || g.id === e.toId))) return null;
         let start = getEntityCenter(e.fromId, nodes, groups);
         let end = getEntityCenter(e.toId, nodes, groups);
         if (!start || !end) return null;
@@ -2047,6 +2071,29 @@ export default function GenogramApp() {
     const selectedNode = selectedNodeIds.length === 1 ? nodes.find(n => n.id === selectedNodeIds[0]) : null;
     const selectedEdge = edges.find(e => e.id === selectedEdgeIds[0]);
     const selectedGroup = groups.find(g => g.id === selectedGroupIds[0]);
+
+    // Il popover si chiude con un clic fuori (il pulsante che lo apre è escluso, lo gestisce da sé) o con Esc
+    useEffect(() => {
+        if (!showCircPanel) return;
+        const fuori = (e: PointerEvent) => {
+            const t = e.target as Node;
+            if (circPanelRef.current?.contains(t) || circBtnRef.current?.contains(t)) return;
+            setShowCircPanel(false);
+        };
+        const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowCircPanel(false); };
+        document.addEventListener('pointerdown', fuori);
+        document.addEventListener('keydown', esc);
+        return () => { document.removeEventListener('pointerdown', fuori); document.removeEventListener('keydown', esc); };
+    }, [showCircPanel]);
+
+    // I colori del tema per il circonflesso: la stessa terna serve a icona sul disegno, grafico e elenco
+    const circColori: CircumplexColori = {
+        testo: currentTheme.colors.text, tenue: currentTheme.colors.textMuted, bordo: currentTheme.colors.border,
+        sfondo: currentTheme.colors.bgPanel, accento: currentTheme.colors.accent,
+    };
+    // Un solo punto di scrittura per grafico e cursori, così non possono divergere
+    const setCircumplex = (id: string, patch: Partial<CircumplexValues> & { date?: string }) =>
+        updateGroups(groups.map(g => g.id === id ? { ...g, circumplex: { ...(g.circumplex ?? VALORI_INIZIALI), ...patch } } : g));
 
     // --- INTERAZIONI CANVAS + SHORTCUT (Fase 5) — vedi hooks/ ---
     const { getEventCoords, handleSelectionDrag, handleCanvasDown, handleNoteDown, handleNodeDown, handleEdgeClick, handleGroupDown, handleHandleDown, handleTransformStart, handleEdgeAction } = useCanvasInteraction({ containerRef, contextMenu, cursorRef, dragRef, edges, edgesRef, editingGroupId, getGraphCoordinates, groupsRef, isPanMode, isZoomingRef, longPressTimerRef, nodes, nodesRef, pushState, selectedNodeIds, selectedNoteIds, selectionMode, setContextMenu, setDragState, setEdges, setEditingGroupId, setGroups, setNodes, setQuickMenu, setSelectedEdgeIds, setSelectedGroupIds, setSelectedNodeIds, setSelectedNoteIds, setStickyNotes, snapToGrid, stickyNotes, stickyNotesRef, updateAll, updateGroups });
@@ -2451,6 +2498,45 @@ export default function GenogramApp() {
                         <button onClick={autoLayout} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Auto-Layout" title="Auto-Layout"><Network size={18} /></button>
                         <button onClick={autoLayoutCM} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Layout Genogramma (Carter & McGoldrick)" title="Layout Genogramma (Carter & McGoldrick)"><GitBranch size={18} /></button>
                         <button onClick={evitaSovrapposizioni} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Evita sovrapposizioni" title="Evita sovrapposizioni (fa spazio ai nomi, sposta chi copre qualcuno)"><AlignHorizontalSpaceAround size={18} /></button>
+                        <button ref={circBtnRef} onClick={() => setShowCircPanel(v => !v)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Valutazioni circonflesse (Olson)" aria-expanded={showCircPanel} title="Valutazioni circonflesse (Olson)"><CircleDot size={18} /></button>
+                        {showCircPanel && (() => {
+                            const r = circBtnRef.current?.getBoundingClientRect();
+                            const lista = groups.filter(g => g.type === 'circumplex');
+                            return (
+                                // fixed + z-[70]: sopra l'header (z-60) e il pannello proprietà (z-50), senza farsi tagliare dalla barra scorrevole
+                                <div ref={circPanelRef} className="fixed z-[70] w-72 max-h-[60vh] overflow-y-auto rounded-lg border shadow-xl p-2 theme-panel theme-border"
+                                    style={{ top: (r?.bottom ?? 56) + 6, left: Math.max(8, Math.min((r?.left ?? 8), window.innerWidth - 296)) }}>
+                                    <div className="text-[9px] font-bold uppercase opacity-45 px-1 pb-1">Valutazioni circonflesse (Olson)</div>
+                                    {lista.length === 0 ? (
+                                        <p className="text-xs opacity-60 p-2">Nessuna valutazione. Crea un gruppo e scegli il tipo «Circonflesso di Olson».</p>
+                                    ) : (
+                                        <ul role="list" className="space-y-1">
+                                            {lista.map(g => {
+                                                const cv = g.circumplex ?? VALORI_INIZIALI;
+                                                return (
+                                                    <li key={g.id} className="flex items-center gap-1">
+                                                        <button className="flex-1 min-w-0 flex items-center gap-2 p-1 rounded theme-hover text-left" aria-label={`Seleziona il gruppo ${g.label}`}
+                                                            onClick={() => { setSelectedGroupIds([g.id]); setSelectedNodeIds([]); }}>
+                                                            <svg width={28} height={28} className="shrink-0" aria-hidden="true"><CircumplexGlyph valori={cv} x={0} y={0} size={28} colori={circColori} /></svg>
+                                                            <span className="min-w-0">
+                                                                <span className="block text-xs font-semibold truncate">{g.label}</span>
+                                                                <span className="block text-[10px] opacity-60">{tipoSistema(cv).label}</span>
+                                                            </span>
+                                                        </button>
+                                                        <button className="p-1.5 rounded theme-hover shrink-0" aria-pressed={!!g.hidden}
+                                                            aria-label={g.hidden ? `Mostra ${g.label} nel disegno` : `Nascondi ${g.label} dal disegno`}
+                                                            title={g.hidden ? 'Mostra nel disegno' : 'Nascondi dal disegno'}
+                                                            onClick={() => updateGroups(groups.map(x => x.id === g.id ? { ...x, hidden: !x.hidden } : x))}>
+                                                            {g.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                                                        </button>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    )}
+                                </div>
+                            );
+                        })()}
                         <button onClick={() => setShowMinuchin(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Mappe Strutturali (Minuchin)" title="Mappe Strutturali (Minuchin)"><Boxes size={18} /></button>
                         <button onClick={() => setShowImageImport(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Importa genogramma da immagine" title="Importa da immagine (foto o scansione)"><ScanLine size={18} /></button>
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
@@ -2542,9 +2628,11 @@ export default function GenogramApp() {
                                 transform={`scale(${zoom})`} style={{ transformOrigin: `${CENTER_POS}px ${CENTER_POS}px` }}>
                                 {/* GRUPPI (Sfondo e Label) */}
                                 {groups.map(g => {
+                                    if (g.hidden) return null;
                                     const geom = getGroupGeometry(g, nodes);
                                     if (!geom) return null;
                                     const { d: pathD } = geom;
+                                    const isCirc = g.type === 'circumplex';
 
                                     const isSel = selectedGroupIds.includes(g.id);
                                     const gColor = tinta(g.color, (g.color === '#000000' && darkMode) ? '#ffffff' : g.color);
@@ -2561,10 +2649,12 @@ export default function GenogramApp() {
                                                 d={pathD}
                                                 fill={gColor}
                                                 fillRule="evenodd"
-                                                fillOpacity={0.05}
+                                                fillOpacity={isCirc ? 0.03 : 0.05}
                                                 stroke={gColor}
-                                                strokeDasharray="10,5"
-                                                strokeWidth={isSel ? 3 : 2}
+                                                // il circonflesso è una valutazione, non un raggruppamento: contorno a puntini per distinguerlo a colpo d'occhio
+                                                strokeDasharray={isCirc ? '1.5 6' : '10,5'}
+                                                strokeLinecap={isCirc ? 'round' : undefined}
+                                                strokeWidth={isCirc ? (isSel ? 3.5 : 2.5) : (isSel ? 3 : 2)}
                                                 strokeLinejoin="round"
                                                 className={isSel ? 'stroke-blue-500 cursor-move' : 'cursor-pointer'}
                                                 onPointerDown={(e) => { e.stopPropagation(); setSelectedGroupIds([g.id]); setSelectedNodeIds([]); }}
@@ -2587,6 +2677,13 @@ export default function GenogramApp() {
                                                 >
                                                     <rect x={-(g.label.length * 4) - 10} y="-12" width={(g.label.length * 8) + 20} height="24" fill={currentTheme.colors.bgPanel} fillOpacity="0.8" rx="4" stroke={isSel ? 'blue' : 'transparent'} />
                                                     <text textAnchor="middle" dy="5" fill={gColor} className="geno-nucleo text-xs font-bold uppercase select-none pointer-events-none">{g.label}</text>
+                                                </g>
+                                            )}
+                                            {isCirc && (
+                                                // parte del disegno (niente data-ui): finisce nelle esportazioni
+                                                <g className="pointer-events-none">
+                                                    <CircumplexGlyph valori={g.circumplex ?? VALORI_INIZIALI} size={28} colori={circColori}
+                                                        x={g.showLabel !== false ? labelX + (g.label.length * 4) + 16 : labelX - 14} y={labelY - 14} />
                                                 </g>
                                             )}
                                         </g>
@@ -2783,7 +2880,7 @@ export default function GenogramApp() {
                                 {dragState && dragState.type === 'box' && (<rect x={Math.min(dragState.startX, dragState.currX)} y={Math.min(dragState.startY, dragState.currY)} width={Math.abs(dragState.currX - dragState.startX)} height={Math.abs(dragState.currY - dragState.startY)} fill="rgba(0,0,255,0.1)" stroke="blue" />)}
                                 {/* LAYER MANIGLIE GRUPPI (Sincronizzato) */}
                                 {groups.map(g => {
-                                    if (!selectedGroupIds.includes(g.id)) return null;
+                                    if (!selectedGroupIds.includes(g.id) || g.hidden) return null;
 
                                     const geom = getGroupGeometry(g, nodes);
                                     if (!geom) return null;
@@ -3036,9 +3133,46 @@ export default function GenogramApp() {
                             {selectedGroup && (
                                 <div className="space-y-3 animate-in fade-in slide-in-from-right-4 duration-200">
                                     <label className="text-xs opacity-50 font-bold">Tipo Gruppo</label>
-                                    <select className="w-full p-2 rounded border bg-transparent theme-border" value={selectedGroup.type} onChange={e => updateGroups(groups.map(g => g.id === selectedGroup.id ? { ...g, type: e.target.value as any } : g))}>
-                                        <option value="household" className="text-black">Household</option><option value="subsystem" className="text-black">Sottosistema</option>
+                                    <select className="w-full p-2 rounded border bg-transparent theme-border" value={selectedGroup.type} onChange={e => updateGroups(groups.map(g => g.id === selectedGroup.id ? { ...g, type: e.target.value as NodeGroup['type'], ...(e.target.value === 'circumplex' && !g.circumplex ? { circumplex: { ...VALORI_INIZIALI } } : {}) } : g))}>
+                                        <option value="household" className="text-black">Household</option><option value="subsystem" className="text-black">Sottosistema</option><option value="circumplex" className="text-black">Circonflesso di Olson</option>
                                     </select>
+
+                                    {selectedGroup.type === 'circumplex' && (() => {
+                                        const cv: CircumplexValues & { date?: string } = selectedGroup.circumplex ?? VALORI_INIZIALI;
+                                        const tipo = tipoSistema(cv);
+                                        const base = tipo.key === 'bilanciato' ? '#16a34a' : tipo.key === 'medio' ? '#d97706' : '#dc2626';
+                                        const cursori: { k: 'cohesion' | 'flexibility'; titolo: string; liv: string }[] = [
+                                            { k: 'cohesion', titolo: 'Coesione', liv: livelloCoesione(cv.cohesion).label },
+                                            { k: 'flexibility', titolo: 'Flessibilità', liv: livelloFlessibilita(cv.flexibility).label },
+                                        ];
+                                        return (
+                                            <div className="space-y-2 pt-1">
+                                                <div className="text-[9px] font-bold uppercase opacity-45">Circonflesso di Olson</div>
+                                                <div className="flex justify-center">
+                                                    <CircumplexChart valori={cv} size={240} colori={circColori} onChange={v => setCircumplex(selectedGroup.id, v)} />
+                                                </div>
+                                                {cursori.map(c => (
+                                                    <Campo key={c.k} titolo={c.titolo}>
+                                                        <div className="flex items-center gap-2">
+                                                            <input type="range" min={0} max={100} step={1} className="flex-1 min-w-0" value={clamp100(cv[c.k])}
+                                                                onChange={e => setCircumplex(selectedGroup.id, { [c.k]: clamp100(Number(e.target.value)) })} />
+                                                            <span className="text-[10px] tabular-nums w-7 text-right">{clamp100(cv[c.k])}</span>
+                                                        </div>
+                                                        <span className="block text-[10px] opacity-60 mt-0.5">{c.liv}</span>
+                                                    </Campo>
+                                                ))}
+                                                <div className="text-xs font-bold text-center rounded py-1 border" style={{ color: tinta(base), borderColor: tinta(base), background: `color-mix(in srgb, ${tinta(base)} 12%, transparent)` }}>{tipo.label}</div>
+                                                <Campo titolo="Data valutazione">
+                                                    <input type="date" className="w-full border p-1 rounded bg-transparent theme-border" value={cv.date || ''} onChange={e => setCircumplex(selectedGroup.id, { date: e.target.value || undefined })} />
+                                                </Campo>
+                                                <div className="flex items-center gap-2">
+                                                    <input type="checkbox" id="circHidden" checked={!!selectedGroup.hidden}
+                                                        onChange={e => updateGroups(groups.map(g => g.id === selectedGroup.id ? { ...g, hidden: e.target.checked } : g))} />
+                                                    <label htmlFor="circHidden" className="text-xs">Nascondi nel disegno</label>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
 
                                     <button
                                         onClick={() => setEditingGroupId(selectedGroup.id)}

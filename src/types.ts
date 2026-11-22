@@ -24,7 +24,9 @@ export interface GenNode {
 export interface RelationEdge { id: string; fromId: string; toId: string; type: string; startDate?: string; color?: string; lineStyle?: string; decorator?: string; label: string; notes: NoteItem[]; fromAnchor?: number; toAnchor?: number;
     /** punti intermedi del percorso (solo relazioni libere: non coppia, figli, gemelli) */
     waypoints?: { x: number, y: number }[]; }
-export interface NodeGroup { id: string; memberIds: string[]; type: 'household' | 'subsystem'; label: string; color: string; notes: NoteItem[]; labelPos?: { x: number, y: number }; customPadding?: number; showLabel?: boolean; }
+export interface NodeGroup { id: string; memberIds: string[]; type: 'household' | 'subsystem' | 'circumplex'; label: string; color: string; notes: NoteItem[]; labelPos?: { x: number, y: number }; customPadding?: number; showLabel?: boolean;
+    // Valutazione del modello circonflesso di Olson (0–100); `hidden` toglie il gruppo dal disegno senza cancellarlo
+    circumplex?: { cohesion: number; flexibility: number; date?: string }; hidden?: boolean; }
 export interface CustomPreset { id: string; name: string; type: 'relationship'; config: { color: string; lineStyle: string; renderType: string; decorator: string; } }
 export interface GenogramMeta { id: string; title: string; category: string; lastModified: number; data: { nodes: GenNode[]; edges: RelationEdge[]; groups: NodeGroup[]; presets?: CustomPreset[]; stickyNotes?: any[]; structuralMaps?: StructuralMap[]; } }
 // --- AGGIUNGI SOTTO GLI ALTRI INTERFACE ---
