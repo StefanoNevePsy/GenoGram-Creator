@@ -35,7 +35,7 @@ import { nodeFootprint } from './utils/footprint';
 import { inlineTextStyles, embedFonts } from './utils/exportStyle';
 import { getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
 import { Legend, RelationshipSelector, ConnectionLine, isFreeRelation, NodeShape, SelectionTransformer, StickyNoteShape } from './components/canvas';
-import { QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector, StickyNotePropertiesPanel, Campo } from './components/panels';
+import { QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector, StickyNotePropertiesPanel, Campo, CampoNascita } from './components/panels';
 import { ReportModal, SettingsModal, InstructionsModal, StyleDesignerModal, ReportConfigModal } from './components/modals';
 import { parseFirebaseConfig } from './services/firebase';
 import { useGenogramHistory } from './hooks/useHistory';
@@ -2898,13 +2898,13 @@ export default function GenogramApp() {
                                         <Campo titolo="Religione" className="w-1/2"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.religion || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, religion: e.target.value } : n))} placeholder="" /></Campo>
                                     </div>
                                     <Campo titolo="Etnia / origine culturale"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.ethnicity || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, ethnicity: e.target.value } : n))} placeholder="" /></Campo>
-                                    <Campo titolo="Nascita"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate}
-                                        onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: e.target.value } : n))}
-                                        onBlur={e => {
-                                            // Un'età digitata qui diventa l'anno di nascita: scritta com'è
-                                            // resterebbe congelata, e fra due anni direbbe ancora la stessa cosa.
-                                            const conv = ageToBirthYear(e.target.value, selectedNode.deceased ? selectedNode.deathDate : undefined);
-                                            if (conv !== e.target.value) updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: conv } : n));
+                                    <Campo titolo="Nascita"><CampoNascita key={selectedNode.id} className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate}
+                                        onChange={v => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: v } : n))}
+                                        onCommit={v => {
+                                            // un'età digitata diventa l'anno di nascita, così si aggiorna col tempo
+                                            const id = selectedNode.id;
+                                            const conv = ageToBirthYear(v, selectedNode.deceased ? selectedNode.deathDate : undefined);
+                                            if (conv !== v) updateNodes(prev => prev.map(n => n.id === id ? { ...n, birthDate: conv } : n));
                                         }}
                                         placeholder="data, anno oppure l'età"
                                         title="Puoi scrivere una data (12/05/1981), un anno (1981) o direttamente l'età: l'età viene convertita nell'anno di nascita, così resta aggiornata col passare del tempo." /></Campo>

@@ -389,3 +389,35 @@ export const Campo = ({ titolo, children, className = '' }: { titolo: string, ch
         {children}
     </label>
 );
+
+// Campo "Nascita": accetta una data, un anno o direttamente l'età. L'età va
+// convertita nell'anno di nascita, altrimenti resta congelata ("45" direbbe 45
+// per sempre). La conversione deve avvenire comunque finisca la modifica: solo
+// sull'uscita dal campo non basta, perché cliccando sul disegno, su un'altra
+// persona, o premendo Esc il pannello si chiude SENZA che il campo perda il
+// fuoco (il canvas trattiene il clic), e l'età restava salvata così com'era.
+// Quindi si converte all'uscita, a Invio o Esc e quando il campo scompare.
+export const CampoNascita = ({ value, onChange, onCommit, className, placeholder, title }: {
+    value: string,
+    onChange: (v: string) => void,
+    /** riceve il valore digitato: se è un'età la converte e la salva */
+    onCommit: (v: string) => void,
+    className?: string, placeholder?: string, title?: string,
+}) => {
+    const latest = useRef({ value, onCommit, dirty: false });
+    latest.current.value = value;
+    latest.current.onCommit = onCommit;
+    const commit = () => {
+        if (!latest.current.dirty) return;
+        latest.current.dirty = false;
+        latest.current.onCommit(latest.current.value);
+    };
+    // all'uscita dal pannello (Esc, clic sul disegno, altra persona selezionata)
+    useEffect(() => () => commit(), []);   // eslint-disable-line react-hooks/exhaustive-deps
+    return (
+        <input className={className} value={value} placeholder={placeholder} title={title}
+            onChange={e => { latest.current.dirty = true; onChange(e.target.value); }}
+            onBlur={commit}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { commit(); (e.target as HTMLInputElement).blur(); } }} />
+    );
+};
