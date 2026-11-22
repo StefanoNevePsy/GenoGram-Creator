@@ -30,7 +30,8 @@ import type { Gender, GenNode, RelationEdge, NodeGroup, CustomPreset, GenogramMe
 import { calculateAge, calculateAgeAtDeath, extractYear, ageToBirthYear } from './utils/dates';
 import { generateId, findMarriageEdge } from './utils/genogram';
 import { computeGenogramLayout } from './layout/autoLayout';
-import { getGroupBounds, getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
+import { inlineTextStyles, embedFonts } from './utils/exportStyle';
+import { getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
 import { Legend, RelationshipSelector, ConnectionLine, NodeShape, SelectionTransformer, StickyNoteShape } from './components/canvas';
 import { QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector, StickyNotePropertiesPanel } from './components/panels';
 import { ReportModal, SettingsModal, InstructionsModal, StyleDesignerModal, ReportConfigModal } from './components/modals';
@@ -1243,12 +1244,16 @@ export default function GenogramApp() {
             maxX = Math.max(maxX, n.x + NODE_WIDTH); maxY = Math.max(maxY, n.y + NODE_HEIGHT);
         });
 
+        // il contorno reale del gruppo (con l'etichetta sopra), non il
+        // rettangolo dei membri: il contorno sporge di un padding, e i colli
+        // fra membri lontani possono girare attorno a chi sta in mezzo
         groups.forEach(g => {
-            const b = getGroupBounds(g, nodes);
-            if (b) {
-                minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
-                maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
-            }
+            const geom = getGroupGeometry(g, nodes);
+            if (!geom) return;
+            const b = geom.bounds;
+            const labelTop = g.showLabel !== false ? (g.labelPos ? g.labelPos.y : geom.top.y - 20) - 18 : b.y0;
+            minX = Math.min(minX, b.x0); minY = Math.min(minY, b.y0, labelTop);
+            maxX = Math.max(maxX, b.x1); maxY = Math.max(maxY, b.y1);
         });
 
         // Le sticky notes fanno parte del contenuto: senza questo venivano
@@ -1286,10 +1291,11 @@ export default function GenogramApp() {
     };
 
     // Export SVG vettoriale: ideale per tesi/articoli, nessuna perdita di qualità
-    const downloadSVG = () => {
+    const downloadSVG = async () => {
         if (!svgRef.current) return;
         const bounds = getGraphBounds();
         const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
+        inlineTextStyles(svgClone, svgRef.current);
         const gElement = svgClone.querySelector('g');
         if (gElement) {
             gElement.setAttribute('transform', '');
@@ -1298,9 +1304,10 @@ export default function GenogramApp() {
         svgClone.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`);
         svgClone.setAttribute('width', `${bounds.w}`);
         svgClone.setAttribute('height', `${bounds.h}`);
-        svgClone.style.fontFamily = 'sans-serif';
 
-        const svgData = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
+        copiaTemaInSvg(svgClone, svgRef.current);
+        await embedFonts(svgClone);
+        const svgData = new XMLSerializer().serializeToString(svgClone);
         const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1316,6 +1323,7 @@ export default function GenogramApp() {
         const scaleFactor = exportScale;
 
         const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
+        inlineTextStyles(svgClone, svgRef.current);
         const gElement = svgClone.querySelector('g');
         if (gElement) {
             gElement.setAttribute('transform', '');
@@ -1325,9 +1333,13 @@ export default function GenogramApp() {
         svgClone.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`);
         svgClone.setAttribute('width', `${bounds.w * scaleFactor}`);
         svgClone.setAttribute('height', `${bounds.h * scaleFactor}`);
-        svgClone.style.fontFamily = 'sans-serif';
 
-        const svgData = (copiaTemaInSvg(svgClone, svgRef.current), notaInTestoSvg(svgClone), new XMLSerializer().serializeToString(svgClone));
+        // Un SVG disegnato come immagine non può caricare font esterni: vanno
+        // incorporati, altrimenti il PNG ricade nel carattere di sistema.
+        copiaTemaInSvg(svgClone, svgRef.current);
+        notaInTestoSvg(svgClone);
+        await embedFonts(svgClone);
+        const svgData = new XMLSerializer().serializeToString(svgClone);
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         const img = new Image();
@@ -1338,7 +1350,10 @@ export default function GenogramApp() {
         const now = new Date();
         const fileName = `${metaTitle.replace(/\s+/g, '_')}_${now.toISOString().slice(0, 10)}.${format}`;
 
-        img.onload = () => {
+        img.onload = async () => {
+            // il caricamento dell'immagine non garantisce che i font incorporati
+            // siano già decodificati: senza, il primo disegno può usare il ripiego
+            try { await img.decode(); } catch { /* decode non supportato: si disegna comunque */ }
             canvas.width = bounds.w * scaleFactor;
             canvas.height = bounds.h * scaleFactor;
 
@@ -1389,13 +1404,16 @@ export default function GenogramApp() {
         img.src = url;
     };
 
-    const printVectorPDF = () => {
+    const printVectorPDF = async () => {
+        // la finestra si apre subito, nel gesto dell'utente: dopo un await i
+        // browser la bloccherebbero come popup
         const w = window.open('', '_blank');
         if (w && svgRef.current) {
             const bounds = getGraphBounds();
 
             // Clona l'SVG
             const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
+            inlineTextStyles(svgClone, svgRef.current);
 
             // 1. Determina il colore di sfondo attuale
             const bgColor = currentTheme.stile ? currentTheme.colors.bgMain : (darkMode ? '#111827' : '#ffffff'); // gray-900 vs white
@@ -1428,7 +1446,9 @@ export default function GenogramApp() {
             svgClone.style.display = 'block';
             svgClone.style.overflow = 'visible';
 
-            const svgHtml = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
+            copiaTemaInSvg(svgClone, svgRef.current);
+            await embedFonts(svgClone);
+            const svgHtml = new XMLSerializer().serializeToString(svgClone);
 
             w.document.write(`
                 <!DOCTYPE html>
@@ -1561,11 +1581,12 @@ export default function GenogramApp() {
     // --- FUNZIONE STAMPA PDF (CORRETTA E VISIBILE) ---
     // Sostituisci tutto il blocco errato "const printPDF..." con questo:
 
-    const executePrintPDF = (options: ReportOptions) => {
+    const executePrintPDF = async (options: ReportOptions) => {
         const w = window.open('', '_blank');
         if (w && svgRef.current) {
             const bounds = getGraphBounds();
             const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
+            inlineTextStyles(svgClone, svgRef.current);
 
             // Reset trasformazioni per la stampa
             const gElement = svgClone.querySelector('g');
@@ -1579,7 +1600,9 @@ export default function GenogramApp() {
             // Altezza fissa per la prima pagina, il resto scorre
             svgClone.setAttribute('height', '50vh');
 
-            const svgHtml = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
+            copiaTemaInSvg(svgClone, svgRef.current);
+            await embedFonts(svgClone);
+            const svgHtml = new XMLSerializer().serializeToString(svgClone);
 
             // Genera il contenuto testuale usando le opzioni
             const reportHtml = generateReportHTML(nodes, edges, groups, options);
@@ -2380,21 +2403,23 @@ export default function GenogramApp() {
                                 {groups.map(g => {
                                     const geom = getGroupGeometry(g, nodes);
                                     if (!geom) return null;
-                                    const { d: pathD, cx } = geom;
+                                    const { d: pathD } = geom;
 
                                     const isSel = selectedGroupIds.includes(g.id);
                                     const gColor = tinta(g.color, (g.color === '#000000' && darkMode) ? '#ffffff' : g.color);
 
-                                    // Label Pos logic
-                                    const labelX = g.labelPos ? g.labelPos.x : cx;
-                                    // Posiziona label sopra il punto più alto del gruppo se non custom
-                                    const labelY = g.labelPos ? g.labelPos.y : (Math.min(...geom.expandedPoints.map(p => p.y)) - 20);
+                                    // Etichetta sopra il punto più alto del contorno: con un gruppo a
+                                    // L il baricentro può cadere fuori dalla forma, e l'etichetta finiva
+                                    // a galleggiare sopra persone che nel gruppo non ci sono.
+                                    const labelX = g.labelPos ? g.labelPos.x : geom.top.x;
+                                    const labelY = g.labelPos ? g.labelPos.y : geom.top.y - 20;
 
                                     return (
                                         <g key={g.id} onClick={(e) => { e.stopPropagation(); setSelectedGroupIds([g.id]); setSelectedNodeIds([]); }}>
                                             <path
                                                 d={pathD}
                                                 fill={gColor}
+                                                fillRule="evenodd"
                                                 fillOpacity={0.05}
                                                 stroke={gColor}
                                                 strokeDasharray="10,5"

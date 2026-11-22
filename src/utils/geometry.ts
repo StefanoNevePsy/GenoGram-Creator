@@ -1,5 +1,7 @@
 import type { GenNode, NodeGroup } from '../types';
 import { NODE_WIDTH, NODE_HEIGHT, NODE_RADIUS, GROUP_PADDING } from '../config/constants';
+import { groupContour, pointAtFraction, type Rect } from './groupShape';
+import { nodeFootprint } from './footprint';
 
 
 export const getGroupBounds = (group: NodeGroup, nodes: GenNode[]) => {
@@ -159,8 +161,15 @@ export const getClosestPointOnPolygon = (polyPoints: { x: number, y: number }[],
     return closest;
 };
 
-// --- MATH: PUNTO ESATTO SU CURVA BEZIER (Per Slider preciso) ---
-export const getPointOnOrganicPerimeter = (controlPoints: { x: number, y: number }[], t: number) => {
+// --- PUNTO SUL PERIMETRO DI UN GRUPPO ---
+// Con il nuovo contorno (groupShape) i "controlPoints" sono il perimetro stesso,
+// campionato fitto: t è la frazione della sua lunghezza a partire dal punto più
+// alto, in senso orario.
+export const getPointOnOrganicPerimeter = (controlPoints: { x: number, y: number }[], t: number) =>
+    controlPoints.length > 12 ? pointAtFraction(controlPoints, t) : getPointOnQuadraticBlob(controlPoints, t);
+
+// Vecchio blob a curve quadratiche: resta per chi passa pochi punti di controllo.
+const getPointOnQuadraticBlob = (controlPoints: { x: number, y: number }[], t: number) => {
     // t va da 0.0 a 1.0
     const len = controlPoints.length;
     if (len < 3) return controlPoints[0];
@@ -193,38 +202,45 @@ export const getPointOnOrganicPerimeter = (controlPoints: { x: number, y: number
     return { x, y };
 };
 
-// --- GEOMETRIA CONDIVISA (FIX DEFINITIVO: NOMI SOPRA, ETA SOTTO) ---
-// --- GEOMETRIA CONDIVISA (FIX: Padding +3px e Etichette) ---
-export const getGroupGeometry = (g: NodeGroup, nodes: GenNode[]) => {
-    const mems = nodes.filter(n => g.memberIds.includes(n.id));
-    if (mems.length === 0) return null;
+// --- GEOMETRIA DI UN GRUPPO ---
+// Contorno a distanza costante dai membri che aggira chi non ne fa parte: vedi
+// groupShape.ts per il perché. Si ricalcola a ogni render, e un render di
+// trascinamento ne fa decine al secondo: il risultato si tiene in memoria
+// finché non cambia nulla di ciò che lo determina.
+export interface GroupGeometry {
+    d: string; cx: number; cy: number;
+    /** perimetro campionato fitto: aggancio delle relazioni e collisioni */
+    expandedPoints: { x: number, y: number }[];
+    /** stesso perimetro, per getPointOnOrganicPerimeter (ancore salvate) */
+    controlPoints: { x: number, y: number }[];
+    top: { x: number, y: number };
+    bounds: Rect;
+}
 
-    let points: { x: number, y: number }[] = [];
-    mems.forEach(n => {
-        const nameWidth = Math.max(80, n.name.length * 8);
-        const halfW = nameWidth / 2;
-        const cx = n.x + NODE_WIDTH / 2;
+const geomCache = new Map<string, GroupGeometry | null>();
+const r1 = (v: number) => Math.round(v * 10) / 10;
 
-        // Punti Sopra
-        const topY = n.y - 25;
-        points.push({ x: cx - halfW, y: topY });
-        points.push({ x: cx + halfW, y: topY });
-
-        // Punti Sotto
-        const bottomY = n.y + NODE_HEIGHT + 10;
-        points.push({ x: cx - halfW, y: bottomY });
-        points.push({ x: cx + halfW, y: bottomY });
-
-        // Punti Laterali
-        points.push({ x: n.x - 5, y: n.y + NODE_HEIGHT / 2 });
-        points.push({ x: n.x + NODE_WIDTH + 5, y: n.y + NODE_HEIGHT / 2 });
-    });
-
-    const hullPoints = getConvexHull(points);
-    // Padding aumentato leggermente come richiesto (era 20, ora 23)
+export const getGroupGeometry = (g: NodeGroup, nodes: GenNode[]): GroupGeometry | null => {
+    const memberSet = new Set(g.memberIds);
+    const members = nodes.filter(n => memberSet.has(n.id)).map(nodeFootprint);
+    if (members.length === 0) return null;
+    const others = nodes.filter(n => !memberSet.has(n.id)).map(nodeFootprint);
     const padding = g.customPadding ?? 23;
 
-    return getOrganicBlobPath(hullPoints, padding);
+    const key = padding + '|' + members.map(r => `${r1(r.x0)},${r1(r.y0)},${r1(r.x1)},${r1(r.y1)}`).join(';')
+        + '|' + others.map(r => `${r1(r.x0)},${r1(r.y0)},${r1(r.x1)},${r1(r.y1)}`).join(';');
+    const hit = geomCache.get(key);
+    if (hit !== undefined) return hit;
+
+    const c = groupContour(members, others, padding);
+    const geom: GroupGeometry | null = c && {
+        d: c.d, cx: c.cx, cy: c.cy,
+        expandedPoints: c.outline, controlPoints: c.outline,
+        top: c.top, bounds: c.bounds,
+    };
+    if (geomCache.size > 200) geomCache.delete(geomCache.keys().next().value as string);
+    geomCache.set(key, geom);
+    return geom;
 };
 
 export const getZigZagPath = (x1: number, y1: number, x2: number, y2: number, amplitude = 4, frequency = 12) => {

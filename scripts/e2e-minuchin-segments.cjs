@@ -2,7 +2,7 @@
 // Uso: NODE_PATH=./node_modules node scripts/e2e-minuchin-segments.cjs
 const { chromium } = require('playwright-core');
 (async () => {
-    const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+    const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
     const page = await b.newPage({ viewport: { width: 1400, height: 900 } });
     const errors=[]; page.on('pageerror',e=>errors.push(e.message));
     const ok=(c,m)=>console.log((c?'PASS':'FAIL')+' '+m);

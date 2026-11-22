@@ -12,7 +12,8 @@ import type { RelationEdge, NodeGroup, StickyNoteData } from '../types';
 import type { GenNode } from '../types';
 import { CANVAS_SIZE, NODE_WIDTH, SNAP_SIZE } from '../config/constants';
 import { generateId } from '../utils/genogram';
-import { getGroupBounds, getGroupGeometry, getPointOnOrganicPerimeter } from '../utils/geometry';
+import { getGroupGeometry, getPointOnOrganicPerimeter } from '../utils/geometry';
+import { pointInPolygon } from '../utils/groupShape';
 
 interface CanvasDeps {
     containerRef: React.RefObject<HTMLDivElement | null>;
@@ -508,12 +509,13 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
                     n.id !== sourceId
                 );
                 // Bersaglio GRUPPO (solo per relazioni generiche 'link'):
-                // hit-test sul bounding box del blob
+                // dentro il contorno vero, non nel suo rettangolo — con un
+                // gruppo a L l'angolo vuoto non è il gruppo
                 const targetGroup = (!targetNode && type === 'link')
                     ? groupsRef.current.find(g => {
                         if (g.id === sourceId) return false;
-                        const b = getGroupBounds(g, nodesRef.current);
-                        return !!b && currX >= b.x && currX <= b.x + b.w && currY >= b.y && currY <= b.y + b.h;
+                        const geom = getGroupGeometry(g, nodesRef.current);
+                        return !!geom && pointInPolygon({ x: currX, y: currY }, geom.expandedPoints);
                     })
                     : undefined;
 

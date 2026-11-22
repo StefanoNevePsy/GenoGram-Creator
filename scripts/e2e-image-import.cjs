@@ -7,7 +7,7 @@
 //   NODE_PATH=./node_modules node scripts/e2e-image-import.cjs [path-chromium]
 const { chromium } = require('playwright-core');
 
-const CHROME = process.argv[2] || process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = process.argv[2] || process.env.CHROME_PATH || '/opt/pw-browsers/chromium';
 let failures = 0;
 const ok = (cond, msg) => { console.log((cond ? 'PASS' : 'FAIL') + ' ' + msg); if (!cond) failures++; };
 
