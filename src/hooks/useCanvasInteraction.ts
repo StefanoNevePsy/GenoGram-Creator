@@ -541,7 +541,7 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
                 // gruppo a L l'angolo vuoto non è il gruppo
                 const targetGroup = (!targetNode && type === 'link')
                     ? groupsRef.current.find(g => {
-                        if (g.id === sourceId) return false;
+                        if (g.id === sourceId || g.hidden) return false;
                         const geom = getGroupGeometry(g, nodesRef.current);
                         return !!geom && pointInPolygon({ x: currX, y: currY }, geom.expandedPoints);
                     })
