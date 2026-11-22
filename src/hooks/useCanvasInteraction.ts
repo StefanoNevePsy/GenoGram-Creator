@@ -436,7 +436,7 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
                     setEdges(prev => prev.map(ed => ed.id === edgeId ? { ...ed, [key]: bestT } : ed));
                 }
             }
-            else if (['spouse', 'child', 'parents', 'link', 'group-label', 'group-padding', 'transform-scale', 'transform-rotate'].includes(dragRef.current.type)) {
+            else if (['spouse', 'child', 'parents', 'link', 'group-label', 'group-glyph', 'group-padding', 'transform-scale', 'transform-rotate'].includes(dragRef.current.type)) {
                 if (dragRef.current.type === 'group-padding') {
                     const dx = x - startX;
                     const dy = y - startY;
@@ -449,6 +449,14 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
                     const initial = dragRef.current!.initialNodePositions?.[dragRef.current!.sourceId];
                     if (initial) {
                         setGroups(prev => prev.map(g => g.id === dragRef.current!.sourceId ? { ...g, labelPos: { x: initial.x + dx, y: initial.y + dy } } : g));
+                    }
+                } else if (dragRef.current.type === 'group-glyph') {
+                    // come l'etichetta: nessuno snap, l'icona è un'annotazione libera
+                    const dx = x - startX;
+                    const dy = y - startY;
+                    const initial = dragRef.current!.initialNodePositions?.[dragRef.current!.sourceId];
+                    if (initial) {
+                        setGroups(prev => prev.map(g => g.id === dragRef.current!.sourceId ? { ...g, glyphPos: { x: initial.x + dx, y: initial.y + dy } } : g));
                     }
                 }
                 setDragState({ ...dragRef.current, currX: x, currY: y });
@@ -468,7 +476,7 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
 
             if (!dragRef.current || !dragRef.current.active) return;
 
-            const wasMoving = dragRef.current.type === 'move' || dragRef.current.type === 'move-note' || dragRef.current.type === 'group-label' || dragRef.current.type === 'group-padding' || dragRef.current.type === 'transform-scale' || dragRef.current.type === 'transform-rotate' || dragRef.current.type === 'selection-group' || dragRef.current.type === 'edge-anchor' || dragRef.current.type === 'edge-waypoint';
+            const wasMoving = dragRef.current.type === 'move' || dragRef.current.type === 'move-note' || dragRef.current.type === 'group-label' || dragRef.current.type === 'group-glyph' || dragRef.current.type === 'group-padding' || dragRef.current.type === 'transform-scale' || dragRef.current.type === 'transform-rotate' || dragRef.current.type === 'selection-group' || dragRef.current.type === 'edge-anchor' || dragRef.current.type === 'edge-waypoint';
             // Una persona "in attesa" (cartiglio) trascinata altrove entra nel genogramma
             if (dragRef.current.type === 'move') {
                 const mosse = selectedNodeIds.filter(id => {

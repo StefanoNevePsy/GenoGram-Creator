@@ -58,6 +58,20 @@ import { ScegliPerPsyDiary, AvvisoPonte } from './components/ponte';
 
 
 
+// Lato dell'icona del circonflesso sul canvas
+const GLYPH_SIZE = 32;
+// Posizione (angolo in alto a sinistra) dell'icona. Senza posizione scelta: a destra dell'etichetta se c'è,
+// altrimenti SOPRA il contorno — mai sui membri, che era il difetto del vecchio ancoraggio all'etichetta.
+const glyphPosOf = (g: NodeGroup, geom: NonNullable<ReturnType<typeof getGroupGeometry>>) => {
+    if (g.glyphPos) return g.glyphPos;
+    if (g.showLabel !== false) {
+        const lx = g.labelPos ? g.labelPos.x : geom.top.x;
+        const ly = g.labelPos ? g.labelPos.y : geom.top.y - 20;
+        return { x: lx + (g.label.length * 4) + 16, y: ly - GLYPH_SIZE / 2 };
+    }
+    return { x: geom.top.x - GLYPH_SIZE / 2, y: geom.top.y - 6 - GLYPH_SIZE };
+};
+
 export default function GenogramApp() {
     // --- 1. DEFINIZIONE RIFERIMENTI (Tutti in alto, PRIMA di usarli) ---
     const svgRef = useRef<SVGSVGElement>(null);
@@ -1332,6 +1346,12 @@ export default function GenogramApp() {
             const labelTop = g.showLabel !== false ? (g.labelPos ? g.labelPos.y : geom.top.y - 20) - 18 : b.y0;
             minX = Math.min(minX, b.x0); minY = Math.min(minY, b.y0, labelTop);
             maxX = Math.max(maxX, b.x1); maxY = Math.max(maxY, b.y1);
+            if (g.type === 'circumplex') {
+                // anche l'icona, che può stare fuori dal contorno: senza questo l'esportazione la taglierebbe
+                const gp = glyphPosOf(g, geom);
+                minX = Math.min(minX, gp.x); minY = Math.min(minY, gp.y);
+                maxX = Math.max(maxX, gp.x + GLYPH_SIZE); maxY = Math.max(maxY, gp.y + GLYPH_SIZE);
+            }
         });
 
         // Le sticky notes fanno parte del contenuto: senza questo venivano
@@ -2089,7 +2109,7 @@ export default function GenogramApp() {
     // I colori del tema per il circonflesso: la stessa terna serve a icona sul disegno, grafico e elenco
     const circColori: CircumplexColori = {
         testo: currentTheme.colors.text, tenue: currentTheme.colors.textMuted, bordo: currentTheme.colors.border,
-        sfondo: currentTheme.colors.bgPanel, accento: currentTheme.colors.accent,
+        sfondo: currentTheme.colors.bgMain, accento: currentTheme.colors.accent,
     };
     // Un solo punto di scrittura per grafico e cursori, così non possono divergere
     const setCircumplex = (id: string, patch: Partial<CircumplexValues> & { date?: string }) =>
@@ -2642,6 +2662,7 @@ export default function GenogramApp() {
                                     // a galleggiare sopra persone che nel gruppo non ci sono.
                                     const labelX = g.labelPos ? g.labelPos.x : geom.top.x;
                                     const labelY = g.labelPos ? g.labelPos.y : geom.top.y - 20;
+                                    const glyphPos = isCirc ? glyphPosOf(g, geom) : { x: 0, y: 0 };
 
                                     return (
                                         <g key={g.id} onClick={(e) => { e.stopPropagation(); setSelectedGroupIds([g.id]); setSelectedNodeIds([]); }}>
@@ -2680,10 +2701,26 @@ export default function GenogramApp() {
                                                 </g>
                                             )}
                                             {isCirc && (
-                                                // parte del disegno (niente data-ui): finisce nelle esportazioni
-                                                <g className="pointer-events-none">
-                                                    <CircumplexGlyph valori={g.circumplex ?? VALORI_INIZIALI} size={28} colori={circColori}
-                                                        x={g.showLabel !== false ? labelX + (g.label.length * 4) + 16 : labelX - 14} y={labelY - 14} />
+                                                // parte del disegno (niente data-ui): finisce nelle esportazioni.
+                                                // Trascinabile come l'etichetta: in automatico può cadere su una persona.
+                                                <g
+                                                    className="cursor-move"
+                                                    style={{ touchAction: 'none' }}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onPointerDown={(e) => {
+                                                        e.stopPropagation(); e.preventDefault();
+                                                        setSelectedGroupIds([g.id]); setSelectedNodeIds([]);
+                                                        const { x, y } = getEventCoords(e);
+                                                        dragRef.current = {
+                                                            active: true, type: 'group-glyph', sourceId: g.id,
+                                                            startX: x, startY: y, currX: x, currY: y,
+                                                            initialNodePositions: { [g.id]: glyphPos },
+                                                            pointerId: e.pointerId
+                                                        };
+                                                        setDragState({ ...dragRef.current });
+                                                    }}
+                                                >
+                                                    <CircumplexGlyph valori={g.circumplex ?? VALORI_INIZIALI} size={GLYPH_SIZE} colori={circColori} x={glyphPos.x} y={glyphPos.y} />
                                                 </g>
                                             )}
                                         </g>
@@ -3170,6 +3207,10 @@ export default function GenogramApp() {
                                                         onChange={e => updateGroups(groups.map(g => g.id === selectedGroup.id ? { ...g, hidden: e.target.checked } : g))} />
                                                     <label htmlFor="circHidden" className="text-xs">Nascondi nel disegno</label>
                                                 </div>
+                                                {selectedGroup.glyphPos && (
+                                                    <button type="button" className="text-xs underline opacity-80 hover:opacity-100"
+                                                        onClick={() => updateGroups(groups.map(g => g.id === selectedGroup.id ? { ...g, glyphPos: undefined } : g))}>Riposiziona icona</button>
+                                                )}
                                             </div>
                                         );
                                     })()}

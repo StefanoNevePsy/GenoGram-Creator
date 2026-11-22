@@ -18,7 +18,7 @@ const DATA = {
     data: {
         nodes: [N('a', 'M', C - 200, C, 'Aldo'), N('b', 'F', C + 200, C, 'Bice'), N('c', 'M', C, C + 200, 'Carlo')],
         edges: [],
-        groups: [{ id: 'g1', memberIds: ['a', 'b', 'c'], type: 'circumplex', label: 'Famiglia', color: '#2563eb', notes: [],
+        groups: [{ id: 'g1', memberIds: ['a', 'b', 'c'], type: 'circumplex', showLabel: false, label: 'Famiglia', color: '#2563eb', notes: [],
             circumplex: { cohesion: 80, flexibility: 20 } }],
         stickyNotes: [], structuralMaps: [], presets: [],
     },
@@ -54,6 +54,49 @@ const selectGroup = page => page.evaluate(sel => {
     ok(await page.locator('path[stroke-dasharray="10,5"]').count() === 0, 'nessun contorno tratteggiato standard');
     const glyphs = () => page.locator('svg g > title').evaluateAll(ts => ts.filter(t => t.textContent.startsWith('Coesione')).length);
     ok(await glyphs() === 1, 'icona del circonflesso accanto all\'etichetta');
+
+
+    // --- icona movibile (etichetta nascosta: in automatico sta sopra il contorno, non sui membri) ---
+    const glyphBox = () => page.evaluate(() => {
+        const t = [...document.querySelectorAll('svg g > title')].find(x => x.textContent.startsWith('Coesione'));
+        const r = t.parentElement.getBoundingClientRect();
+        return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const personBoxes = () => page.evaluate(() => ['Aldo', 'Bice', 'Carlo'].map(n => {
+        const tx = [...document.querySelectorAll('svg text')].find(x => x.textContent.trim() === n);
+        const r = tx.closest('g[style*="touch-action"]').getBoundingClientRect();
+        return { n, x: r.x, y: r.y, w: r.width, h: r.height };
+    }));
+    const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    let gb = await glyphBox();
+    const pers = await personBoxes();
+    ok(pers.every(p => !overlap(gb, p)), 'etichetta nascosta: l\'icona non copre nessuna persona');
+    const drag = async (dx) => {
+        const b = await glyphBox();
+        const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+        await page.mouse.move(cx, cy); await page.mouse.down();
+        await page.mouse.move(cx + dx / 2, cy, { steps: 5 }); await page.mouse.move(cx + dx, cy, { steps: 5 });
+        await page.mouse.up();
+    };
+    await drag(120);
+    await page.waitForTimeout(2200);
+    const gb2 = await glyphBox();
+    ok(Math.abs(gb2.x - gb.x - 120) < 4 && Math.abs(gb2.y - gb.y) < 4, `trascinando l'icona di 120px si sposta (${Math.round(gb2.x - gb.x)})`);
+    let gX = await savedGroup(page);
+    ok(gX.glyphPos && typeof gX.glyphPos.x === 'number', 'glyphPos salvato');
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(2200);
+    const gb3 = await glyphBox();
+    ok(Math.abs(gb3.x - gb.x) < 4, 'Ctrl+Z ripristina la posizione precedente');
+    gX = await savedGroup(page);
+    ok(!gX.glyphPos, 'dopo Ctrl+Z glyphPos non è più salvato');
+    await drag(120);
+    await page.waitForTimeout(500);
+    await page.click('text=Riposiziona icona');
+    await page.waitForTimeout(2200);
+    gX = await savedGroup(page);
+    ok(!gX.glyphPos, '"Riposiziona icona" azzera glyphPos');
+    ok(Math.abs((await glyphBox()).x - gb.x) < 4, 'l\'icona torna in posizione automatica');
 
     // selezione: grafico e badge nella sidebar
     await selectGroup(page);
