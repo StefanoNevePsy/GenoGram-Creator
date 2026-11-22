@@ -8,7 +8,7 @@ import {
     AlignJustify, CircleDashed, FileText, Search, RotateCcw, RotateCw,
     Filter, SortAsc, Tag, HelpCircle,
     Target, Grid3X3, TrendingUp, Image as ImageIcon, FileImage, Check, Info,
-    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy, Baby, Shapes, Boxes, Menu, Send, ScanLine // <--- Network aggiunto qui
+    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy, Baby, Shapes, Boxes, Menu, Send, ScanLine, AlignHorizontalSpaceAround // <--- Network aggiunto qui
 } from 'lucide-react';
 import { StatusBar } from '@capacitor/status-bar';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -30,6 +30,8 @@ import type { Gender, GenNode, RelationEdge, NodeGroup, CustomPreset, GenogramMe
 import { calculateAge, calculateAgeAtDeath, extractYear, ageToBirthYear } from './utils/dates';
 import { generateId, findMarriageEdge } from './utils/genogram';
 import { computeGenogramLayout } from './layout/autoLayout';
+import { declutterLayout } from './layout/declutter';
+import { nodeFootprint } from './utils/footprint';
 import { inlineTextStyles, embedFonts } from './utils/exportStyle';
 import { getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
 import { Legend, RelationshipSelector, ConnectionLine, NodeShape, SelectionTransformer, StickyNoteShape } from './components/canvas';
@@ -1206,11 +1208,35 @@ export default function GenogramApp() {
     };
 
     // Layout Genogramma secondo Carter & McGoldrick (deterministico)
+    // Dopo il layout C&M, che usa distanze uniformi, si fa spazio dove i nomi
+    // si coprono e si collocano accanto ai loro collegati le persone fuori
+    // dalla struttura (terapeuta, amici): vedi layout/declutter.ts.
     const autoLayoutCM = () => {
         const { positions, warnings } = computeGenogramLayout(nodes, edges, { centerX: CENTER_POS, centerY: CENTER_POS, snap: SNAP_SIZE });
         if (positions.size === 0) { alert("Nessuna struttura familiare da disporre (servono relazioni di coppia o figli)."); return; }
-        updateNodes(nodes.map(n => { const p = positions.get(n.id); return p ? { ...n, x: p.x, y: p.y } : n; }));
+        const laid = nodes.map(n => { const p = positions.get(n.id); return p ? { ...n, x: p.x, y: p.y } : n; });
+        const d = declutterLayout(laid, edges, stickyNotes, { snap: snapToGrid ? SNAP_SIZE : 0, recenter: true, satellites: 'all', groups, previous: nodes });
+        updateAll(
+            laid.map(n => { const p = d.positions.get(n.id)!; return { ...n, x: p.x, y: p.y }; }),
+            edges, groups,
+            stickyNotes.map(sn => { const p = d.notes.get(sn.id); return p ? { ...sn, x: p.x, y: p.y } : sn; }),
+        );
         if (warnings.length) console.warn('Layout C&M:', warnings);
+        setTimeout(fitView, 60);
+    };
+
+    // Rende visibile tutto senza rifare il layout: fa spazio solo dove due
+    // persone (con i loro nomi) si coprono, e sposta satelliti e note solo se
+    // coprono qualcosa. Rispetta una disposizione fatta a mano.
+    const evitaSovrapposizioni = () => {
+        const d = declutterLayout(nodes, edges, stickyNotes, { snap: snapToGrid ? SNAP_SIZE : 0, recenter: false, satellites: 'overlapping', groups });
+        if (d.moved === 0) { setLiveMessage('Nessuna sovrapposizione da risolvere'); return; }
+        updateAll(
+            nodes.map(n => { const p = d.positions.get(n.id)!; return { ...n, x: p.x, y: p.y }; }),
+            edges, groups,
+            stickyNotes.map(sn => { const p = d.notes.get(sn.id); return p ? { ...sn, x: p.x, y: p.y } : sn; }),
+        );
+        setLiveMessage(d.moved === 1 ? 'Spostato 1 elemento per evitare sovrapposizioni' : `Spostati ${d.moved} elementi per evitare sovrapposizioni`);
         setTimeout(fitView, 60);
     };
 
@@ -1219,7 +1245,7 @@ export default function GenogramApp() {
     // Zoom-to-fit: inquadra tutto il contenuto con un click
     const fitView = () => {
         const c = containerRef.current; if (!c) return;
-        const b = getContentBounds();
+        const b = contentBoundsOf(nodesRef.current, groupsRef.current, stickyNotesRef.current);
         const pad = 100;
         const w = (b.maxX - b.minX) + pad * 2;
         const h = (b.maxY - b.minY) + pad * 2;
@@ -1231,17 +1257,23 @@ export default function GenogramApp() {
         c.scrollTo({ left: cx - c.clientWidth / 2, top: cy - c.clientHeight / 2, behavior: 'smooth' });
     };
 
-    // Helper: Calcola i confini esatti del contenuto (Nodi + Gruppi)
-    const getContentBounds = useCallback(() => {
+    // Confini del contenuto (persone con i loro nomi, gruppi, note). Riceve i
+    // dati invece di leggerli dallo stato: l'inquadratura chiamata subito
+    // dopo un layout ha in mano lo stato PRIMA dell'aggiornamento, e
+    // inquadrava le posizioni vecchie lasciando fuori metà del disegno.
+    const contentBoundsOf = (nodes: GenNode[], groups: NodeGroup[], stickyNotes: StickyNoteData[]) => {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
         if (nodes.length === 0 && stickyNotes.length === 0) {
             return { minX: CENTER_POS - 400, minY: CENTER_POS - 300, maxX: CENTER_POS + 400, maxY: CENTER_POS + 300 };
         }
 
+        // l'ingombro vero, nome compreso: col solo simbolo un nome lungo sul
+        // bordo del disegno finiva tagliato nelle esportazioni
         nodes.forEach(n => {
-            minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
-            maxX = Math.max(maxX, n.x + NODE_WIDTH); maxY = Math.max(maxY, n.y + NODE_HEIGHT);
+            const f = nodeFootprint(n);
+            minX = Math.min(minX, f.x0); minY = Math.min(minY, f.y0);
+            maxX = Math.max(maxX, f.x1); maxY = Math.max(maxY, f.y1);
         });
 
         // il contorno reale del gruppo (con l'etichetta sopra), non il
@@ -1263,7 +1295,8 @@ export default function GenogramApp() {
             maxX = Math.max(maxX, sn.x + (sn.width || 0)); maxY = Math.max(maxY, sn.y + (sn.height || 0));
         });
         return { minX, minY, maxX, maxY };
-    }, [nodes, groups, stickyNotes]);
+    };
+    const getContentBounds = useCallback(() => contentBoundsOf(nodes, groups, stickyNotes), [nodes, groups, stickyNotes]);
 
     const getGraphBounds = () => {
         let { minX, minY, maxX, maxY } = getContentBounds();
@@ -2310,6 +2343,7 @@ export default function GenogramApp() {
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
                         <button onClick={autoLayout} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Auto-Layout" title="Auto-Layout"><Network size={18} /></button>
                         <button onClick={autoLayoutCM} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Layout Genogramma (Carter & McGoldrick)" title="Layout Genogramma (Carter & McGoldrick)"><GitBranch size={18} /></button>
+                        <button onClick={evitaSovrapposizioni} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Evita sovrapposizioni" title="Evita sovrapposizioni (fa spazio ai nomi, sposta chi copre qualcuno)"><AlignHorizontalSpaceAround size={18} /></button>
                         <button onClick={() => setShowMinuchin(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Mappe Strutturali (Minuchin)" title="Mappe Strutturali (Minuchin)"><Boxes size={18} /></button>
                         <button onClick={() => setShowImageImport(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Importa genogramma da immagine" title="Importa da immagine (foto o scansione)"><ScanLine size={18} /></button>
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
