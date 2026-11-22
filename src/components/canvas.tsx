@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { tinta, ROSSO } from '../utils/tema';
 import { Plus, ChevronDown, Heart, Users, Waypoints } from 'lucide-react';
 import type { GenNode, RelationEdge, StickyNoteData } from '../types';
@@ -7,6 +7,7 @@ import { NODE_WIDTH, NODE_HEIGHT, NODE_RADIUS } from '../config/constants';
 import { parseDate, calculateAge, calculateAgeAtDeath, annoMorte } from '../utils/dates';
 import { getMarriageBarY } from '../utils/genogram';
 import { getZigZagPath } from '../utils/geometry';
+import { pointAlong, endAngles, offsetPolyline, roundedPath, zigzagAlong } from '../utils/edgeRoute';
 
 import { readRecentRelations, pushRecentRelation } from '../services/storage';
 
@@ -342,6 +343,11 @@ export const RelationshipSelector = ({ value, onChange, className, darkMode = fa
     );
 };
 
+// Relazioni disegnate col tracciato a U della coppia (barra sotto i due).
+export const STRUCTURAL_LINE_TYPES = ['marriage', 'secret', 'couple', 'divorce-commit', 'separation', 'separation-repaired', 'separation-cohab', 'divorce', 'divorce-repaired', 'cohabitation', 'affair', 're-marriage', 'engagement', 'one-night'];
+/** Relazioni "libere": tracciato diretto, reinstradabile con punti intermedi. */
+export const isFreeRelation = (type: string) => !STRUCTURAL_LINE_TYPES.includes(type) && !type.startsWith('child') && !type.startsWith('twin');
+
 export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customConfig, onSelect, onAddChild, isTargetGroup, tNode }: any) => {
     // Same content as previous, keeping logic for decorators
     let baseConfig = BASE_REL_CONFIG[edge.type];
@@ -351,20 +357,34 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
     const finalColor = edge.color || baseConfig.color;
     const renderType = baseConfig.renderType;
     const stroke = isSelected ? '#3b82f6' : tinta(finalColor, darkMode && finalColor === '#000000' ? '#ffffff' : finalColor);
-    const isStructural = ['marriage', 'secret', 'couple', 'divorce-commit', 'separation', 'separation-repaired', 'separation-cohab', 'divorce', 'divorce-repaired', 'cohabitation', 'affair', 're-marriage', 'engagement', 'one-night'].includes(edge.type);
+    const isStructural = STRUCTURAL_LINE_TYPES.includes(edge.type);
     const marriageBarY = getMarriageBarY(start.y, end.y);
-    let midX = (start.x + end.x) / 2;
-    let midY = (start.y + end.y) / 2;
+    // Relazioni "libere" (affettive, conflittuali, sociali...): possono passare
+    // per punti intermedi scelti dall'utente. Coppia, figli e gemelli hanno un
+    // tracciato convenzionale e non si reinstradano.
+    const isFree = isFreeRelation(edge.type);
+    const waypoints: { x: number, y: number }[] = isFree && Array.isArray(edge.waypoints) ? edge.waypoints : [];
+    const route = [start, ...waypoints, end];
+    const mid = isFree ? pointAlong(route, 0.5) : { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2, angle: 0 };
+    let midX = mid.x;
+    let midY = mid.y;
     if (isStructural) midY = marriageBarY;
 
     let pathD = '';
 
-    const angle = isStructural ? 0 : Math.atan2(end.y - start.y, end.x - start.x) * 180 / Math.PI;
+    const straightAngle = isStructural ? 0 : Math.atan2(end.y - start.y, end.x - start.x) * 180 / Math.PI;
+    const ends = endAngles(route);
+    // freccia d'arrivo nella direzione dell'ultimo tratto, simboli centrali
+    // perpendicolari al tratto in cui cadono, freccia di partenza sul primo
+    const angle = isFree ? ends.end : straightAngle;
+    const midAngle = isFree ? mid.angle : straightAngle;
+    const startAngle = isFree ? ends.start : straightAngle;
+    const prevPt = route[route.length - 2];
 
     let borderDist = 20;
     if (tNode && !isTargetGroup) {
-        const dx = start.x - end.x;
-        const dy = start.y - end.y;
+        const dx = prevPt.x - end.x;
+        const dy = prevPt.y - end.y;
         let radius = 20;
         if (!['M', 'F', 'TransWoman', 'TransMan', 'NonBinary'].includes(tNode.gender)) radius = 15;
 
@@ -383,7 +403,7 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
     const tipOffset = renderType.includes('arrow-thick') ? 4 : 6;
     const arrowOffset = (isTargetGroup ? 0 : borderDist) + tipOffset;
     const arrowTrans = `translate(${end.x},${end.y}) rotate(${angle}) translate(-${arrowOffset},0)`;
-    const centerArrowTrans = `translate(${midX},${midY}) rotate(${angle})`;
+    const centerArrowTrans = `translate(${midX},${midY}) rotate(${midAngle})`;
 
     let actualEndX = end.x;
     let actualEndY = end.y;
@@ -391,24 +411,50 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
     const hasEndArrow = (renderType.includes('arrow') && !renderType.includes('center') && renderType !== 'double-arrow-inward') || renderType === 'triple-zigzag-center-arrow';
     if (hasEndArrow && !isStructural) {
         const baseOffset = arrowOffset + 4; // Use slightly smaller offset to avoid gap
-        const rad = Math.atan2(end.y - start.y, end.x - start.x);
+        const rad = angle * Math.PI / 180;
         actualEndX = end.x - Math.cos(rad) * baseOffset;
         actualEndY = end.y - Math.sin(rad) * baseOffset;
     }
+    const drawn = [start, ...waypoints, { x: actualEndX, y: actualEndY }];
+    const corner = waypoints.length ? 14 : 0;   // raccordo agli angoli dei waypoint
+
+    let zz = { amp: 4, freq: 12 };
+    if (baseConfig.lineStyle === 'zigzag-thick') zz = { amp: 6, freq: 10 };
+    if (baseConfig.lineStyle === 'zigzag-soft') zz = { amp: 2.5, freq: 9 };
+    const isZig = baseConfig.lineStyle.startsWith('zigzag');
 
     if (isStructural) pathD = `M ${start.x} ${start.y + NODE_RADIUS} L ${start.x} ${marriageBarY} L ${end.x} ${marriageBarY} L ${end.x} ${end.y + NODE_RADIUS}`;
     else if (edge.type.startsWith('child') || edge.type.startsWith('twin')) {
         if (edge.type.startsWith('twin')) pathD = `M ${start.x} ${start.y} L ${actualEndX} ${actualEndY}`;
         else pathD = `M ${start.x} ${start.y} L ${actualEndX} ${start.y} L ${actualEndX} ${actualEndY}`;
-    } else if (baseConfig.lineStyle.startsWith('zigzag')) {
-        let amp = 4; let freq = 12;
-        if (baseConfig.lineStyle === 'zigzag-thick') { amp = 6; freq = 10; }
-        if (baseConfig.lineStyle === 'zigzag-soft') { amp = 2.5; freq = 9; }
-        pathD = getZigZagPath(start.x, start.y, actualEndX, actualEndY, amp, freq);
-    }
-    else pathD = `M ${start.x} ${start.y} Q ${midX} ${midY} ${actualEndX} ${actualEndY}`;
+    } else if (isZig) pathD = zigzagAlong(drawn, zz.amp, zz.freq);
+    else pathD = roundedPath(drawn, corner);
+
+    // Copia parallela del percorso (linee doppie e triple): vera parallela per
+    // le relazioni libere; per le altre resta la traslazione di sempre.
+    const parallelD = (d: number) => {
+        if (!isFree) return pathD;
+        const off = offsetPolyline(drawn, d);
+        return isZig ? zigzagAlong(off, zz.amp, zz.freq) : roundedPath(off, corner);
+    };
+    const parallelT = (d: number) => (isFree ? undefined : `translate(${d},${d})`);
+    // zigzag sovrapposto (ostilità dentro una fusione, ambivalenza...)
+    const zigOver = (amp = 4, freq = 12) => (isFree ? zigzagAlong(drawn, amp, freq) : getZigZagPath(start.x, start.y, actualEndX, actualEndY, amp, freq));
 
     const strokeDash = baseConfig.lineStyle === 'dashed' ? '8,4' : (baseConfig.lineStyle === 'dotted' ? '2,2' : (baseConfig.lineStyle === 'zigzag-soft' ? '7,4' : '0'));
+
+    // Il connettore di un figlio è una L: un tratto lungo la barra dei fratelli
+    // e poi la discesa fino al figlio. Il tratto orizzontale è STRUTTURA, non
+    // relazione: lo stile (punteggiato per l'adozione, tratteggiato per
+    // l'affido) appartiene solo alla discesa. Disegnando anche il tratto
+    // orizzontale nello stile della relazione, i figli di una stessa coppia si
+    // ridipingono a vicenda quel tratto — l'ultimo disegnato vince — e la
+    // barra finisce per mostrare lo stile di un figlio qualsiasi.
+    const isChildDrop = edge.type.startsWith('child');
+    const barD = `M ${start.x} ${start.y} L ${actualEndX} ${start.y}`;
+    const dropD = `M ${actualEndX} ${start.y} L ${actualEndX} ${actualEndY}`;
+    const structuralStroke = isSelected ? '#3b82f6' : (darkMode ? '#ffffff' : '#000000');
+    const lineWidth = isSelected ? 3 : (baseConfig.lineStyle === 'zigzag-thick' ? 3 : 2);
 
     const Decorator = () => {
 
@@ -416,17 +462,17 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
         // Disegniamo le due linee esterne SENZA strokeDasharray così rimangono solide
         if (edge.type === 'best-friend') {
             return <g>
-                <path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" />
-                <path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-3,-3)" fill="none" />
+                <path d={parallelD(3)} stroke={stroke} strokeWidth={1} transform={parallelT(3)} fill="none" />
+                <path d={parallelD(-3)} stroke={stroke} strokeWidth={1} transform={parallelT(-3)} fill="none" />
             </g>;
         }
 
-        if (renderType === 'fusion' || renderType === 'triple') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-3,-3)" fill="none" /></g>;
+        if (renderType === 'fusion' || renderType === 'triple') return <g><path d={parallelD(3)} stroke={stroke} strokeWidth={1} transform={parallelT(3)} fill="none" /><path d={parallelD(-3)} stroke={stroke} strokeWidth={1} transform={parallelT(-3)} fill="none" /></g>;
 
         // ... il resto del componente Decorator rimane uguale ...
-        if (renderType === 'fusion-hostile') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-3,-3)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY)} stroke={ROSSO} strokeWidth={1.5} fill="none" /></g>;
-        if (renderType === 'triple-zigzag') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-3,-3)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY)} stroke={ROSSO} strokeWidth={1.5} fill="none" /></g>;
-        if (renderType === 'double' || renderType === 'double-zigzag' || renderType === 'best-friend') return <path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(3,3)" fill="none" strokeDasharray={strokeDash} />;
+        if (renderType === 'fusion-hostile') return <g><path d={parallelD(3)} stroke={stroke} strokeWidth={1} transform={parallelT(3)} fill="none" /><path d={parallelD(-3)} stroke={stroke} strokeWidth={1} transform={parallelT(-3)} fill="none" /><path d={zigOver()} stroke={ROSSO} strokeWidth={1.5} fill="none" /></g>;
+        if (renderType === 'triple-zigzag') return <g><path d={parallelD(3)} stroke={stroke} strokeWidth={1} transform={parallelT(3)} fill="none" /><path d={parallelD(-3)} stroke={stroke} strokeWidth={1} transform={parallelT(-3)} fill="none" /><path d={zigOver()} stroke={ROSSO} strokeWidth={1.5} fill="none" /></g>;
+        if (renderType === 'double' || renderType === 'double-zigzag' || renderType === 'best-friend') return <path d={parallelD(3)} stroke={stroke} strokeWidth={1} transform={parallelT(3)} fill="none" strokeDasharray={strokeDash} />;
 
         // NUOVI SIMBOLI — disegnati nel sistema di riferimento della linea
         // (centerArrowTrans ruota di `angle`): i tagli restano PERPENDICOLARI
@@ -444,9 +490,9 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
         if (renderType === 'cutoff') return <g transform={centerArrowTrans}><line x1={0} y1={-10} x2={0} y2={10} stroke={stroke} strokeWidth={3} /></g>;
         if (renderType === 'cutoff-repaired-circle') return <g transform={centerArrowTrans}><line x1={-4} y1={-10} x2={-14} y2={10} stroke={stroke} strokeWidth={2} /><circle cx={0} cy={0} r={5} fill="none" stroke={stroke} strokeWidth={1.5} /><line x1={14} y1={-10} x2={4} y2={10} stroke={stroke} strokeWidth={2} /></g>;
 
-        if (renderType === 'dashed-inner') return <g><path d={pathD} stroke={stroke} strokeWidth={1.5} strokeDasharray="4,4" fill="none" transform={`translate(0, 6)`} /></g>;
+        if (renderType === 'dashed-inner') return <g><path d={parallelD(6)} stroke={stroke} strokeWidth={1.5} strokeDasharray="4,4" fill="none" transform={isFree ? undefined : `translate(0, 6)`} /></g>;
 
-        if (renderType === 'triple-zigzag-center') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(6,6)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-6,-6)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY, 4, 12)} stroke={ROSSO} strokeWidth={1.5} fill="none" /></g>;
+        if (renderType === 'triple-zigzag-center') return <g><path d={parallelD(6)} stroke={stroke} strokeWidth={1} transform={parallelT(6)} fill="none" /><path d={parallelD(-6)} stroke={stroke} strokeWidth={1} transform={parallelT(-6)} fill="none" /><path d={zigOver(4, 12)} stroke={ROSSO} strokeWidth={1.5} fill="none" /></g>;
 
         if (renderType === 'triangle-up-center') return <polygon points="-6,0 6,0 0,-10" fill={stroke} transform={centerArrowTrans} />;
 
@@ -459,20 +505,17 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
         // Unione civile: due barre parallele perpendicolari alla linea
         if (renderType === 'bars-center') return <g transform={centerArrowTrans}><line x1={-4} y1={-9} x2={-4} y2={9} stroke={stroke} strokeWidth={2.5} /><line x1={4} y1={-9} x2={4} y2={9} stroke={stroke} strokeWidth={2.5} /></g>;
         // Ambivalente: legame pieno con zigzag rosso sovrapposto (amore + odio)
-        if (renderType === 'zigzag-overlay') return <path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY, 4, 14)} stroke="#dc2626" strokeWidth={1.5} fill="none" />;
+        if (renderType === 'zigzag-overlay') return <path d={zigOver(4, 14)} stroke="#dc2626" strokeWidth={1.5} fill="none" />;
         // Genitorializzazione: triangolo pieno al centro (inversione di ruolo)
         if (renderType === 'triangle-center') return <polygon points="-7,-6 7,-6 0,7" fill={stroke} transform={centerArrowTrans} />;
         // Punto pieno al centro: legame marcato (confidente, donazione, sospetto…)
         if (renderType === 'dot-center') return <circle r={5} fill={stroke} transform={centerArrowTrans} />;
 
         if (renderType === 'double-arrow-inward') {
-            const dx = actualEndX - start.x; const dy = actualEndY - start.y;
-            const ang = Math.atan2(dy, dx) * 180 / Math.PI;
-            const x1 = start.x + dx * 0.33; const y1 = start.y + dy * 0.33;
-            const x2 = start.x + dx * 0.67; const y2 = start.y + dy * 0.67;
+            const a = pointAlong(drawn, 0.33), b = pointAlong(drawn, 0.67);
             return <g>
-                <polygon points="6,-6 -6,0 6,6" fill={stroke} transform={`translate(${x1},${y1}) rotate(${ang})`} />
-                <polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={`translate(${x2},${y2}) rotate(${ang})`} />
+                <polygon points="6,-6 -6,0 6,6" fill={stroke} transform={`translate(${a.x},${a.y}) rotate(${a.angle})`} />
+                <polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={`translate(${b.x},${b.y}) rotate(${b.angle})`} />
             </g>;
         }
 
@@ -485,13 +528,13 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
         if (renderType === 'arrow-thick') return <polygon points="-8,-8 4,0 -8,8" fill={stroke} transform={arrowTrans} />;
         if (renderType === 'arrow-end') return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /></g>;
         if (renderType === 'arrow-open-both') {
-            const startTrans = `translate(${start.x},${start.y}) rotate(${angle + 180}) translate(-${arrowOffset},0)`;
+            const startTrans = `translate(${start.x},${start.y}) rotate(${startAngle + 180}) translate(-${arrowOffset},0)`;
             return <g><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={arrowTrans} /><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={startTrans} /></g>;
         }
         if (renderType === 'arrow-open-end') return <g><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={arrowTrans} /></g>;
         if (renderType === 'arrow-open-center') return <g><polyline points="-6,-6 6,0 -6,6" stroke={stroke} strokeWidth={2} fill="none" transform={centerArrowTrans} /></g>;
         if (renderType.includes('arrow') && !renderType.includes('center') && !renderType.includes('thick')) return <g><polygon points="-6,-6 6,0 -6,6" fill={stroke} transform={arrowTrans} /></g>;
-        if (renderType === 'triple-zigzag-center-arrow') return <g><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(6,6)" fill="none" /><path d={pathD} stroke={stroke} strokeWidth={1} transform="translate(-6,-6)" fill="none" /><path d={getZigZagPath(start.x, start.y, actualEndX, actualEndY, 4, 12)} stroke={ROSSO} strokeWidth={1.5} fill="none" /><polygon points="-6,-6 6,0 -6,6" fill={ROSSO} transform={arrowTrans} /></g>;
+        if (renderType === 'triple-zigzag-center-arrow') return <g><path d={parallelD(6)} stroke={stroke} strokeWidth={1} transform={parallelT(6)} fill="none" /><path d={parallelD(-6)} stroke={stroke} strokeWidth={1} transform={parallelT(-6)} fill="none" /><path d={zigOver(4, 12)} stroke={ROSSO} strokeWidth={1.5} fill="none" /><polygon points="-6,-6 6,0 -6,6" fill={ROSSO} transform={arrowTrans} /></g>;
 
         return null;
     };
@@ -500,7 +543,9 @@ export const ConnectionLine = ({ edge, start, end, isSelected, darkMode, customC
 
         onAddChild(e, edge.id);
     };
-    return <g className="group hover:opacity-80 cursor-pointer" onClick={onSelect}><path d={pathD} stroke="transparent" strokeWidth={20} fill="none" /><path d={pathD} stroke={stroke} strokeWidth={isSelected ? 3 : (baseConfig.lineStyle === 'zigzag-thick' ? 3 : 2)} strokeDasharray={strokeDash} fill="none" /><Decorator />{edge.label && <text x={midX} y={midY - 15} textAnchor="middle" fill={stroke} className="text-[10px] bg-white dark:bg-gray-800 px-1">{edge.label}</text>}{isSelected && isStructural && (<g transform={`translate(${midX}, ${marriageBarY})`} onPointerDown={onAddChildH} style={{ touchAction: 'none' }}><circle r={12} fill="#10b981" stroke="white" /><Plus size={12} x={-6} y={-6} stroke="white" strokeWidth={3} /><title>Aggiungi Figlio alla Coppia</title></g>)}</g>;
+    return <g className="group hover:opacity-80 cursor-pointer" onClick={onSelect}><path d={pathD} stroke="transparent" strokeWidth={20} fill="none" />{isChildDrop
+        ? <g><path d={barD} stroke={structuralStroke} strokeWidth={lineWidth} fill="none" /><path d={dropD} stroke={stroke} strokeWidth={lineWidth} strokeDasharray={strokeDash} fill="none" /></g>
+        : <path d={pathD} stroke={stroke} strokeWidth={lineWidth} strokeDasharray={strokeDash} fill="none" />}<Decorator />{edge.label && <text x={midX} y={midY - 15} textAnchor="middle" fill={stroke} className="text-[10px] bg-white dark:bg-gray-800 px-1">{edge.label}</text>}{isSelected && isStructural && (<g transform={`translate(${midX}, ${marriageBarY})`} onPointerDown={onAddChildH} style={{ touchAction: 'none' }}><circle r={12} fill="#10b981" stroke="white" /><Plus size={12} x={-6} y={-6} stroke="white" strokeWidth={3} /><title>Aggiungi Figlio alla Coppia</title></g>)}</g>;
 };
 
 // --- COMPONENTE NODE SHAPE CON RINOMINA E COLORI ---
@@ -639,6 +684,36 @@ export const PersonSymbol = ({ node, darkMode, isSelected = false }: { node: Gen
     return <g>{Shape}<Issues />{IndexMark}{DeceasedMark}{InstitutionMark}{ImmigrationMark}{DonorMark}</g>;
 };
 
+// Adatta il riquadro di sfondo di un'etichetta al testo VERO, misurato dopo il
+// disegno e prima che si veda (useLayoutEffect). Si scrive direttamente sul
+// DOM: React non lo sovrascrive finché la stima di partenza non cambia, e
+// niente stato vuol dire niente secondo disegno. Si rimisura quando i font del
+// tema finiscono di caricarsi, perché il carattere di ripiego ha altre misure.
+const useFitLabel = (cx: number, text: string) => {
+    const rectRef = useRef<SVGRectElement>(null);
+    const textRef = useRef<SVGTextElement>(null);
+    useLayoutEffect(() => {
+        const fit = () => {
+            const t = textRef.current, r = rectRef.current;
+            if (!t || !r || !t.isConnected) return;
+            let len = 0;
+            try { len = t.getComputedTextLength(); } catch { return; }
+            if (!len) return;
+            const width = len + 8;
+            r.setAttribute('width', String(width));
+            r.setAttribute('x', String(cx - width / 2));
+        };
+        fit();
+        const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+        if (!fonts) return;
+        let alive = true;
+        fonts.ready.then(() => { if (alive) fit(); });
+        fonts.addEventListener?.('loadingdone', fit);
+        return () => { alive = false; fonts.removeEventListener?.('loadingdone', fit); };
+    }, [cx, text]);
+    return { rectRef, textRef };
+};
+
 export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleDown, selectionMode, onRename, autoEdit = false, onAutoEdit }: any) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(node.name);
@@ -720,17 +795,21 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
     // Centriamo il testo verticalmente nel rect usando dominantBaseline="middle"
     const TextLabel = ({ y, text, size, bold }: { y: number, text: string, size: number, bold?: boolean }) => {
         if (!text) return null;
-        // Stima larghezza basata su font size medio
+        // Larghezza stimata per il primo disegno; poi si misura il testo vero
+        // (vedi useFitLabel): la stima a 0.65·corpo è larga, e il riquadro
+        // sporgeva oltre il nome coprendo linee e vicini.
         const charW = size * 0.65;
         const width = (text.length * charW) + 8;
         const height = size + 4; // Altezza box proporzionale
+        const { rectRef, textRef } = useFitLabel(w / 2, text);
 
         return (
             <g pointerEvents="none">
                 {/* Il rect è centrato verticalmente attorno a Y */}
-                <rect x={w / 2 - width / 2} y={y - height / 2} width={width} height={height} fill={textBg} fillOpacity="0.9" rx="3" />
+                <rect ref={rectRef} x={w / 2 - width / 2} y={y - height / 2} width={width} height={height} fill={textBg} fillOpacity="0.9" rx="3" />
                 {/* Il testo è centrato verticalmente su Y */}
                 <text
+                    ref={textRef}
                     x={w / 2}
                     y={y}
                     dominantBaseline="middle"
@@ -796,18 +875,20 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
             {node.notes && node.notes.length > 0 && <circle cx={w + 5} cy={0} r={4} fill="var(--geno-rosso, #ef4444)" stroke={textBg} strokeWidth={1} />}
 
             {isSelected && !selectionMode && !isEditing && (
-                <g>
+                // le maniglie stanno FUORI dalle scritte: "genitori" sopra il nome,
+                // "figlio" sotto croce, etichetta e professione (prima le coprivano)
+                <g data-ui="1">
                     <g transform={`translate(${w + 20}, ${r})`} onPointerDown={(e) => onH(e, 'spouse')} className="cursor-crosshair hover:opacity-80" style={{ touchAction: 'none' }}>
                         <circle r={14} fill={darkMode ? '#333' : 'white'} stroke="#db2777" strokeWidth={2} />
                         <Heart size={14} x={-7} y={-7} fill="#db2777" stroke="#db2777" />
                         <title>Coniuge</title>
                     </g>
-                    <g transform={`translate(${r}, ${h + 25})`} onPointerDown={(e) => onH(e, 'child')} className="cursor-crosshair hover:opacity-80" style={{ touchAction: 'none' }}>
+                    <g transform={`translate(${r}, ${h + 25 + extraY + (node.label ? 13 : 0) + (node.profession ? 12 : 0)})`} onPointerDown={(e) => onH(e, 'child')} className="cursor-crosshair hover:opacity-80" style={{ touchAction: 'none' }}>
                         <circle r={14} fill={darkMode ? '#333' : 'white'} stroke="#10b981" strokeWidth={2} />
                         <Plus size={14} x={-7} y={-7} color="#10b981" strokeWidth={3} />
                         <title>Figlio</title>
                     </g>
-                    <g transform={`translate(${r}, -25)`} onPointerDown={(e) => onH(e, 'parents')} className="cursor-crosshair hover:opacity-80" style={{ touchAction: 'none' }}>
+                    <g transform={`translate(${r}, ${node.name ? -36 : -25})`} onPointerDown={(e) => onH(e, 'parents')} className="cursor-crosshair hover:opacity-80" style={{ touchAction: 'none' }}>
                         <circle r={14} fill={darkMode ? '#333' : 'white'} stroke="#8b5cf6" strokeWidth={2} />
                         <Users size={14} x={-7} y={-7} color="#8b5cf6" />
                         <title>Genitori</title>

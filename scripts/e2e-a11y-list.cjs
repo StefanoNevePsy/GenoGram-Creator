@@ -1,6 +1,6 @@
 // Vista a elenco accessibile, annunci live, empty state, target touch, sezioni pannello.
 const { chromium } = require('playwright-core');
-const CHROME = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = process.env.CHROME_PATH || '/opt/pw-browsers/chromium';
 let failures = 0;
 const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + ' ' + m); if (!c) failures++; };
 

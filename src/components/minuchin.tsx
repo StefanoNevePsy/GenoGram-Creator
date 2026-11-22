@@ -14,6 +14,7 @@ import { X, Plus, Trash2, Download, SeparatorVertical, SeparatorHorizontal, User
 import type { GenNode, RelationEdge, NodeGroup, Gender, StructuralMap, MinuchinRelation, MinuchinRelationType, BoundaryStyle } from '../types';
 import type { AppTheme } from '../config/themes';
 import { copiaTemaInSvg, notaInTestoSvg } from '../utils/tema';
+import { inlineTextStyles, embedFonts } from '../utils/exportStyle';
 import { generateId } from '../utils/genogram';
 import { extractYear, annoMorte } from '../utils/dates';
 import { getZigZagPath } from '../utils/geometry';
@@ -425,16 +426,19 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
         ? { ...prev, vBoundaries: (prev.vBoundaries || []).filter(v => v.id !== id) }
         : { ...prev, hBoundaries: (prev.hBoundaries || []).filter(v => v.id !== id) });
 
-    const exportPng = () => {
+    const exportPng = async () => {
         if (!svgRef.current) return;
         const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
+        inlineTextStyles(clone, svgRef.current);   // prima di togliere qualsiasi nodo: i testi si accoppiano per posizione
         clone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());
         clone.setAttribute('width', String(d.W * 2)); clone.setAttribute('height', String(d.H * 2));
         copiaTemaInSvg(clone, svgRef.current); notaInTestoSvg(clone);
+        await embedFonts(clone);
         const data = new XMLSerializer().serializeToString(clone);
         const img = new Image();
         const url = URL.createObjectURL(new Blob([data], { type: 'image/svg+xml;charset=utf-8' }));
-        img.onload = () => {
+        img.onload = async () => {
+            try { await img.decode(); } catch { /* si disegna comunque */ }
             const cv = document.createElement('canvas'); cv.width = d.W * 2; cv.height = d.H * 2;
             const ctx = cv.getContext('2d')!;
             ctx.fillStyle = c.bgMain; ctx.fillRect(0, 0, cv.width, cv.height);

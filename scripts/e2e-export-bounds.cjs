@@ -2,7 +2,7 @@
 // (2) decoratori di taglio perpendicolari alla linea anche in diagonale.
 // Prereq: dev server su :5199. Uso: NODE_PATH=./node_modules node scripts/e2e-export-bounds.cjs
 const { chromium } = require('playwright-core');
-const CHROME = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = process.env.CHROME_PATH || '/opt/pw-browsers/chromium';
 let failures = 0;
 const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + ' ' + m); if (!c) failures++; };
 

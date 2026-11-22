@@ -2,7 +2,7 @@
 // menu relazioni per categoria + ricerca, Escape chiude le modali, aria-label,
 // contrasto etichette categoria, focus-visible.
 const { chromium } = require('playwright-core');
-const CHROME = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = process.env.CHROME_PATH || '/opt/pw-browsers/chromium';
 let failures = 0;
 const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + ' ' + m); if (!c) failures++; };
 const lum = c => { const [r,g,b] = c.match(/\d+/g).map(Number).map(v => { v/=255; return v <= .03928 ? v/12.92 : Math.pow((v+.055)/1.055, 2.4); }); return .2126*r+.7152*g+.0722*b; };

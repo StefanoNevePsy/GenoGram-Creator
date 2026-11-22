@@ -2,3 +2,6 @@ node_modules/
 
 # APK di test generato in sessione
 GenogramBuilder-monet-debug.apk
+
+# screenshot di debug degli e2e, se SP non e\x27 impostata
+undefined/

@@ -10,9 +10,10 @@ import type React from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { RelationEdge, NodeGroup, StickyNoteData } from '../types';
 import type { GenNode } from '../types';
-import { CANVAS_SIZE, NODE_WIDTH, SNAP_SIZE } from '../config/constants';
+import { CANVAS_SIZE, NODE_WIDTH, SNAP_SIZE, GRID_SIZE } from '../config/constants';
 import { generateId } from '../utils/genogram';
-import { getGroupBounds, getGroupGeometry, getPointOnOrganicPerimeter } from '../utils/geometry';
+import { getGroupGeometry, getPointOnOrganicPerimeter } from '../utils/geometry';
+import { pointInPolygon } from '../utils/groupShape';
 
 interface CanvasDeps {
     containerRef: React.RefObject<HTMLDivElement | null>;
@@ -273,13 +274,30 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
 
         const initialPos: Record<string, { x: number, y: number }> = {};
         nodesRef.current.forEach(n => { if (newSelection.includes(n.id)) initialPos[n.id] = { x: n.x, y: n.y }; });
+        // i punti intermedi di una relazione si spostano con la selezione solo
+        // se si spostano ENTRAMBI i suoi estremi: altrimenti restano dove
+        // l'utente li ha messi, perché sono lì per aggirare qualcosa
+        const initialWaypoints: Record<string, { x: number, y: number }[]> = {};
+        edgesRef.current.forEach(ed => {
+            if (ed.waypoints?.length && newSelection.includes(ed.fromId) && newSelection.includes(ed.toId)) initialWaypoints[ed.id] = ed.waypoints;
+        });
 
-        dragRef.current = { active: true, type: 'move', sourceId: id, startX: x, startY: y, currX: x, currY: y, initialNodePositions: initialPos, pointerId: e.pointerId };
+        dragRef.current = { active: true, type: 'move', sourceId: id, startX: x, startY: y, currX: x, currY: y, initialNodePositions: initialPos, initialWaypoints, pointerId: e.pointerId };
         setDragState({ ...dragRef.current });
         setQuickMenu(null);
     };
     const handleGroupDown = (e: any, id: string) => { e.stopPropagation(); e.preventDefault(); const { x, y } = getEventCoords(e); dragRef.current = { active: true, type: 'link', sourceId: id, startX: x, startY: y, currX: x, currY: y, pointerId: e.pointerId }; setDragState({ ...dragRef.current }); setQuickMenu(null); };
-    const handleEdgeClick = (edgeId: string, e: React.MouseEvent) => { e.stopPropagation(); setSelectedEdgeIds([edgeId]); setSelectedNodeIds([]); const edge = edges.find(ed => ed.id === edgeId); if (edge && ['marriage', 'cohabitation', 'separation', 'divorce'].includes(edge.type)) { setSelectedNodeIds([edge.fromId, edge.toId]); } };
+    // Accetta più archi perché una sola linea sul canvas può rappresentarne
+    // due (il connettore di un figlio, uno per genitore): selezionarne uno
+    // solo lascerebbe l'altro fuori da ogni modifica.
+    const handleEdgeClick = (edgeId: string | string[], e: React.MouseEvent) => {
+        e.stopPropagation();
+        const ids = Array.isArray(edgeId) ? edgeId : [edgeId];
+        setSelectedEdgeIds(ids);
+        setSelectedNodeIds([]);
+        const edge = edges.find(ed => ed.id === ids[0]);
+        if (edge && ['marriage', 'cohabitation', 'separation', 'divorce'].includes(edge.type)) { setSelectedNodeIds([edge.fromId, edge.toId]); }
+    };
 
     // --- GESTIONE MOVIMENTO GLOBALE E RILASCIO ---
     useEffect(() => {
@@ -342,6 +360,14 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
                 // Cattura initialNodePositions PRIMA del callback per evitare race condition
                 // con onPointerUp che resetta dragRef.current
                 const savedPositions = dragRef.current.initialNodePositions;
+                const savedWaypoints = dragRef.current.initialWaypoints;
+                if (savedWaypoints && Object.keys(savedWaypoints).length) {
+                    const q = (v: number) => (snapToGrid ? Math.round(v / SNAP_SIZE) * SNAP_SIZE : v);
+                    const ddx = q(dx), ddy = q(dy);
+                    setEdges(prev => prev.map(ed => savedWaypoints[ed.id]
+                        ? { ...ed, waypoints: savedWaypoints[ed.id].map((w: { x: number, y: number }) => ({ x: w.x + ddx, y: w.y + ddy })) }
+                        : ed));
+                }
 
                 setNodes(prevNodes => prevNodes.map(node => {
                     if (selectedNodeIds.includes(node.id)) {
@@ -379,6 +405,19 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
             }
 
             // E. TRASFORMAZIONE HANDLE (SPOUSE, CHILD, PARENTS, LINK) E GROUP
+            else if (dragRef.current.type === 'edge-waypoint') {
+                // un punto intermedio segue il cursore; con la griglia attiva si
+                // aggancia a passi di 20px, così i tratti si allineano facilmente
+                const idx = dragRef.current.waypointIndex ?? 0;
+                const edgeId = dragRef.current.sourceId;
+                const g = (v: number) => (snapToGrid ? Math.round(v / GRID_SIZE) * GRID_SIZE : Math.round(v));
+                setEdges(prev => prev.map(ed => {
+                    if (ed.id !== edgeId || !ed.waypoints || !ed.waypoints[idx]) return ed;
+                    const wps = ed.waypoints.slice();
+                    wps[idx] = { x: g(x), y: g(y) };
+                    return { ...ed, waypoints: wps };
+                }));
+            }
             else if (dragRef.current.type === 'edge-anchor') {
                 // Scorri l'ancora della relazione lungo il perimetro del gruppo:
                 // campiona la curva organica e scegli la t più vicina al cursore
@@ -429,7 +468,7 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
 
             if (!dragRef.current || !dragRef.current.active) return;
 
-            const wasMoving = dragRef.current.type === 'move' || dragRef.current.type === 'move-note' || dragRef.current.type === 'group-label' || dragRef.current.type === 'group-padding' || dragRef.current.type === 'transform-scale' || dragRef.current.type === 'transform-rotate' || dragRef.current.type === 'selection-group' || dragRef.current.type === 'edge-anchor';
+            const wasMoving = dragRef.current.type === 'move' || dragRef.current.type === 'move-note' || dragRef.current.type === 'group-label' || dragRef.current.type === 'group-padding' || dragRef.current.type === 'transform-scale' || dragRef.current.type === 'transform-rotate' || dragRef.current.type === 'selection-group' || dragRef.current.type === 'edge-anchor' || dragRef.current.type === 'edge-waypoint';
             // Una persona "in attesa" (cartiglio) trascinata altrove entra nel genogramma
             if (dragRef.current.type === 'move') {
                 const mosse = selectedNodeIds.filter(id => {
@@ -498,12 +537,13 @@ export const useCanvasInteraction = (d: CanvasDeps) => {
                     n.id !== sourceId
                 );
                 // Bersaglio GRUPPO (solo per relazioni generiche 'link'):
-                // hit-test sul bounding box del blob
+                // dentro il contorno vero, non nel suo rettangolo — con un
+                // gruppo a L l'angolo vuoto non è il gruppo
                 const targetGroup = (!targetNode && type === 'link')
                     ? groupsRef.current.find(g => {
                         if (g.id === sourceId) return false;
-                        const b = getGroupBounds(g, nodesRef.current);
-                        return !!b && currX >= b.x && currX <= b.x + b.w && currY >= b.y && currY <= b.y + b.h;
+                        const geom = getGroupGeometry(g, nodesRef.current);
+                        return !!geom && pointInPolygon({ x: currX, y: currY }, geom.expandedPoints);
                     })
                     : undefined;
 

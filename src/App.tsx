@@ -8,7 +8,7 @@ import {
     AlignJustify, CircleDashed, FileText, Search, RotateCcw, RotateCw,
     Filter, SortAsc, Tag, HelpCircle,
     Target, Grid3X3, TrendingUp, Image as ImageIcon, FileImage, Check, Info,
-    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy, Baby, Shapes, Boxes, Menu, Send // <--- Network aggiunto qui
+    Cloud, CloudOff, RefreshCw, Network, UserPlus, GitBranch, ArrowDownToLine, ArrowUpToLine, StickyNote, Maximize, Minimize, Copy, Baby, Shapes, Boxes, Menu, Send, ScanLine, AlignHorizontalSpaceAround // <--- Network aggiunto qui
 } from 'lucide-react';
 import { StatusBar } from '@capacitor/status-bar';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -27,12 +27,15 @@ import { NOTE_BG_PALETTES, NOTE_TEXT_COLORS, NOTE_FONTS, PRESET_THEMES } from '.
 import { tinta, varsTema, copiaTemaInSvg, notaInTestoSvg } from './utils/tema';
 import { GRID_SIZE, SNAP_SIZE, CANVAS_SIZE, CENTER_POS, NODE_WIDTH, NODE_HEIGHT, MARRIAGE_BAR_Y } from './config/constants';
 import type { Gender, GenNode, RelationEdge, NodeGroup, CustomPreset, GenogramMeta, StickyNoteData, StructuralMap, ReportOptions } from './types';
-import { calculateAge, calculateAgeAtDeath, extractYear } from './utils/dates';
+import { calculateAge, calculateAgeAtDeath, extractYear, ageToBirthYear } from './utils/dates';
 import { generateId, findMarriageEdge } from './utils/genogram';
 import { computeGenogramLayout } from './layout/autoLayout';
-import { getGroupBounds, getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
-import { Legend, RelationshipSelector, ConnectionLine, NodeShape, SelectionTransformer, StickyNoteShape } from './components/canvas';
-import { QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector, StickyNotePropertiesPanel } from './components/panels';
+import { declutterLayout } from './layout/declutter';
+import { nodeFootprint } from './utils/footprint';
+import { inlineTextStyles, embedFonts } from './utils/exportStyle';
+import { getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
+import { Legend, RelationshipSelector, ConnectionLine, isFreeRelation, NodeShape, SelectionTransformer, StickyNoteShape } from './components/canvas';
+import { QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector, StickyNotePropertiesPanel, Campo, CampoNascita } from './components/panels';
 import { ReportModal, SettingsModal, InstructionsModal, StyleDesignerModal, ReportConfigModal } from './components/modals';
 import { parseFirebaseConfig } from './services/firebase';
 import { useGenogramHistory } from './hooks/useHistory';
@@ -42,6 +45,8 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useCanvasInteraction } from './hooks/useCanvasInteraction';
 import { MinuchinManager, MinuchinOverlay, mapToSvgString } from './components/minuchin';
 import { PeopleListPanel, describePerson } from './components/peopleList';
+import type { ImportedPerson, ImportedLink } from './components/imageImportModal';
+import { ImageImportModal } from './components/imageImportModal';
 import { readLocalIndex, readFullGenogram, removeLocalGenogram, persistImportedLocally, downloadJsonFile, saveDraftAndIndex } from './services/storage';
 import { pontePossibile, inviaAPsyDiary, richiestaDaPsyDiary, rispondi, rinuncia, riceviDaPsyDiary, type RichiestaPsyDiary } from './services/psydiary';
 import { ScegliPerPsyDiary, AvvisoPonte } from './components/ponte';
@@ -62,6 +67,7 @@ export default function GenogramApp() {
     const [stickyNotes, setStickyNotes] = useState<StickyNoteData[]>([]);
     const [structuralMaps, setStructuralMaps] = useState<StructuralMap[]>([]);
     const [showMinuchin, setShowMinuchin] = useState(false);
+    const [showImageImport, setShowImageImport] = useState(false);
     const [overlayMapId, setOverlayMapId] = useState<string | null>(null);
     // Barra strumenti: sfumatura a destra solo quando il contenuto trabocca davvero
     const toolbarRef = useRef<HTMLDivElement>(null);
@@ -285,6 +291,8 @@ export default function GenogramApp() {
         startX: number, startY: number, currX: number, currY: number,
         initialNodePositions?: any,
         anchorEnd?: 'from' | 'to', anchorGroupId?: string,
+        initialWaypoints?: Record<string, { x: number, y: number }[]>,
+        waypointIndex?: number,
         clientStartX?: number, clientStartY?: number,
         initialScrollLeft?: number, initialScrollTop?: number,
         initialPadding?: number,
@@ -524,6 +532,7 @@ export default function GenogramApp() {
     useEffect(() => {
         const onEsc = (e: KeyboardEvent) => {
             if (e.key !== 'Escape') return;
+            if (showImageImport) return setShowImageImport(false);
             if (showMinuchin) return setShowMinuchin(false);      // gestisce da sé i sotto-livelli
             if (showReportConfig) return setShowReportConfig(false);
             if (showReport) return setShowReport(false);
@@ -533,7 +542,7 @@ export default function GenogramApp() {
         };
         window.addEventListener('keydown', onEsc);
         return () => window.removeEventListener('keydown', onEsc);
-    }, [showMinuchin, showReportConfig, showReport, showDesigner, showSettings, showHelp]);
+    }, [showImageImport, showMinuchin, showReportConfig, showReport, showDesigner, showSettings, showHelp]);
 
     // Shortcut "i" per legenda
     useEffect(() => {
@@ -779,7 +788,21 @@ export default function GenogramApp() {
     // senza Firebase l'elenco non si aggiorna da solo: si rilegge tornando alla dashboard
     useEffect(() => { if (view === 'dashboard' && (!user || !db)) setGenograms(readLocalIndex().map(readFullGenogram)); }, [view]);
 
-    useLayoutEffect(() => { if (view === 'editor' && containerRef.current) setTimeout(() => { if (containerRef.current) containerRef.current.scrollTo(CENTER_POS - containerRef.current.clientWidth / 2, CENTER_POS - containerRef.current.clientHeight / 2); }, 100); }, [view]);
+    // Aprendo un genogramma si inquadra il DISEGNO, non il centro del foglio:
+    // un genogramma che sta altrove, o più grande dello schermo (sul telefono
+    // quasi sempre), si apriva mostrandone un pezzo o niente. Mai oltre il
+    // 100%, e non sotto il 40%, dove i nomi diventano illeggibili.
+    useLayoutEffect(() => {
+        if (view !== 'editor') return;
+        const t = setTimeout(() => {
+            const c = containerRef.current;
+            if (!c) return;
+            if (nodesRef.current.length === 0 && stickyNotesRef.current.length === 0) {
+                c.scrollTo(CENTER_POS - c.clientWidth / 2, CENTER_POS - c.clientHeight / 2);
+            } else inquadra({ maxZoom: 1, minZoom: 0.4, smooth: false });
+        }, 100);
+        return () => clearTimeout(t);
+    }, [view]);
     const handleSave = () => {
         // Niente alert() su dati clinici: il salvataggio e' gia' automatico, lo
         // confermiamo con un messaggio effimero accanto all'indicatore di sync.
@@ -828,6 +851,40 @@ export default function GenogramApp() {
         const n = { id, x: origine.x + (i % STAGING.cols) * STAGING.dx, y: origine.y + Math.floor(i / STAGING.cols) * STAGING.dy, gender, name, birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [], inAttesa: true };
         updateNodes(prev => [...prev, n as GenNode]);
         return id;
+    };
+
+    // --- IMPORT DA IMMAGINE ---
+    // Arrivano posizioni relative al centro del disegno: si traslano al centro
+    // del canvas. Persone e relazioni entrano con un solo updateAll, non con
+    // due chiamate separate: un'importazione è un gesto unico e l'annulla deve
+    // disfarla tutta, non una persona per volta.
+    // I tipi di relazione sono quelli neutri ('matrimonio', 'figlio
+    // biologico'): dall'immagine si legge CHI è legato a chi, non come.
+    const importFromImage = (people: ImportedPerson[], links: ImportedLink[]) => {
+        if (people.length === 0) return;
+        const ids = people.map(() => generateId());
+        const newNodes: GenNode[] = people.map((p, i) => ({
+            id: ids[i], x: snap(CENTER_POS + p.x), y: snap(CENTER_POS + p.y),
+            gender: p.gender, name: p.name, birthDate: p.birthDate,
+            deceased: p.deceased, indexPerson: false,
+            substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false,
+            gayLesbian: false, notes: [],
+        }));
+        const newEdges: RelationEdge[] = links
+            .filter(l => ids[l.a] && ids[l.b])
+            .map(l => ({
+                id: generateId(), fromId: ids[l.a], toId: ids[l.b],
+                type: l.kind === 'child' ? 'child-bio' : 'marriage',
+                label: '', notes: [],
+            }));
+        updateAll(
+            [...nodesRef.current, ...newNodes],
+            [...edgesRef.current, ...newEdges],
+            groupsRef.current,
+        );
+        setSelectedNodeIds(ids);
+        setShowImageImport(false);
+        setLiveMessage(`Importate ${newNodes.length} persone e ${newEdges.length} relazioni dall'immagine`);
     };
 
     const addNodeAtCenter = (gender: Gender) => {
@@ -1167,50 +1224,105 @@ export default function GenogramApp() {
     };
 
     // Layout Genogramma secondo Carter & McGoldrick (deterministico)
+    // Punti intermedi delle relazioni quando le persone si spostano in blocco:
+    // 'trasla' li sposta della media degli spostamenti dei due estremi (piccoli
+    // aggiustamenti), 'azzera' li toglie dove un estremo si è mosso (layout completo).
+    const puntiDopoSpostamento = (eds: RelationEdge[], prima: GenNode[], dopo: GenNode[], modo: 'trasla' | 'azzera') => {
+        const p0 = new Map(prima.map(n => [n.id, n])), p1 = new Map(dopo.map(n => [n.id, n]));
+        const delta = (id: string) => { const a = p0.get(id), b = p1.get(id); return a && b ? { x: b.x - a.x, y: b.y - a.y } : { x: 0, y: 0 }; };
+        return eds.map(e => {
+            if (!e.waypoints?.length) return e;
+            const a = delta(e.fromId), b = delta(e.toId);
+            if (!a.x && !a.y && !b.x && !b.y) return e;
+            if (modo === 'azzera') return { ...e, waypoints: undefined };
+            const dx = (a.x + b.x) / 2, dy = (a.y + b.y) / 2;
+            return { ...e, waypoints: e.waypoints.map(w => ({ x: w.x + dx, y: w.y + dy })) };
+        });
+    };
+
+    // Dopo il layout C&M, che usa distanze uniformi, si fa spazio dove i nomi
+    // si coprono e si collocano accanto ai loro collegati le persone fuori
+    // dalla struttura (terapeuta, amici): vedi layout/declutter.ts.
     const autoLayoutCM = () => {
         const { positions, warnings } = computeGenogramLayout(nodes, edges, { centerX: CENTER_POS, centerY: CENTER_POS, snap: SNAP_SIZE });
         if (positions.size === 0) { alert("Nessuna struttura familiare da disporre (servono relazioni di coppia o figli)."); return; }
-        updateNodes(nodes.map(n => { const p = positions.get(n.id); return p ? { ...n, x: p.x, y: p.y } : n; }));
+        const laid = nodes.map(n => { const p = positions.get(n.id); return p ? { ...n, x: p.x, y: p.y } : n; });
+        const d = declutterLayout(laid, edges, stickyNotes, { snap: snapToGrid ? SNAP_SIZE : 0, recenter: true, satellites: 'all', groups, previous: nodes });
+        const finali = laid.map(n => { const p = d.positions.get(n.id)!; return { ...n, x: p.x, y: p.y }; });
+        updateAll(
+            finali,
+            // dopo un layout completo i punti intermedi messi per aggirare la
+            // vecchia disposizione non hanno più senso: la linea torna dritta
+            puntiDopoSpostamento(edges, nodes, finali, 'azzera'), groups,
+            stickyNotes.map(sn => { const p = d.notes.get(sn.id); return p ? { ...sn, x: p.x, y: p.y } : sn; }),
+        );
         if (warnings.length) console.warn('Layout C&M:', warnings);
+        setTimeout(fitView, 60);
+    };
+
+    // Rende visibile tutto senza rifare il layout: fa spazio solo dove due
+    // persone (con i loro nomi) si coprono, e sposta satelliti e note solo se
+    // coprono qualcosa. Rispetta una disposizione fatta a mano.
+    const evitaSovrapposizioni = () => {
+        const d = declutterLayout(nodes, edges, stickyNotes, { snap: snapToGrid ? SNAP_SIZE : 0, recenter: false, satellites: 'overlapping', groups });
+        if (d.moved === 0) { setLiveMessage('Nessuna sovrapposizione da risolvere'); return; }
+        const finali = nodes.map(n => { const p = d.positions.get(n.id)!; return { ...n, x: p.x, y: p.y }; });
+        updateAll(
+            finali,
+            puntiDopoSpostamento(edges, nodes, finali, 'trasla'), groups,
+            stickyNotes.map(sn => { const p = d.notes.get(sn.id); return p ? { ...sn, x: p.x, y: p.y } : sn; }),
+        );
+        setLiveMessage(d.moved === 1 ? 'Spostato 1 elemento per evitare sovrapposizioni' : `Spostati ${d.moved} elementi per evitare sovrapposizioni`);
         setTimeout(fitView, 60);
     };
 
     const centerView = () => { setZoom(1); if (containerRef.current) { containerRef.current.scrollTo({ left: CENTER_POS - containerRef.current.clientWidth / 2, top: CENTER_POS - containerRef.current.clientHeight / 2, behavior: 'smooth' }); } };
 
     // Zoom-to-fit: inquadra tutto il contenuto con un click
-    const fitView = () => {
+    const inquadra = (opts: { maxZoom: number, minZoom: number, smooth: boolean }) => {
         const c = containerRef.current; if (!c) return;
-        const b = getContentBounds();
+        const b = contentBoundsOf(nodesRef.current, groupsRef.current, stickyNotesRef.current);
         const pad = 100;
         const w = (b.maxX - b.minX) + pad * 2;
         const h = (b.maxY - b.minY) + pad * 2;
-        const newZoom = Math.min(3, Math.max(0.2, Math.min(c.clientWidth / w, c.clientHeight / h)));
+        const newZoom = Math.min(opts.maxZoom, Math.max(opts.minZoom, Math.min(c.clientWidth / w, c.clientHeight / h)));
         setZoom(newZoom);
         // Lo scale ha origine in CENTER_POS: un punto grafo (x,y) appare a CENTER_POS + (x - CENTER_POS) * zoom
         const cx = CENTER_POS + ((b.minX + b.maxX) / 2 - CENTER_POS) * newZoom;
         const cy = CENTER_POS + ((b.minY + b.maxY) / 2 - CENTER_POS) * newZoom;
-        c.scrollTo({ left: cx - c.clientWidth / 2, top: cy - c.clientHeight / 2, behavior: 'smooth' });
+        c.scrollTo({ left: cx - c.clientWidth / 2, top: cy - c.clientHeight / 2, behavior: opts.smooth ? 'smooth' : 'auto' });
     };
+    const fitView = () => inquadra({ maxZoom: 3, minZoom: 0.2, smooth: true });
 
-    // Helper: Calcola i confini esatti del contenuto (Nodi + Gruppi)
-    const getContentBounds = useCallback(() => {
+    // Confini del contenuto (persone con i loro nomi, gruppi, note). Riceve i
+    // dati invece di leggerli dallo stato: l'inquadratura chiamata subito
+    // dopo un layout ha in mano lo stato PRIMA dell'aggiornamento, e
+    // inquadrava le posizioni vecchie lasciando fuori metà del disegno.
+    const contentBoundsOf = (nodes: GenNode[], groups: NodeGroup[], stickyNotes: StickyNoteData[]) => {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
         if (nodes.length === 0 && stickyNotes.length === 0) {
             return { minX: CENTER_POS - 400, minY: CENTER_POS - 300, maxX: CENTER_POS + 400, maxY: CENTER_POS + 300 };
         }
 
+        // l'ingombro vero, nome compreso: col solo simbolo un nome lungo sul
+        // bordo del disegno finiva tagliato nelle esportazioni
         nodes.forEach(n => {
-            minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
-            maxX = Math.max(maxX, n.x + NODE_WIDTH); maxY = Math.max(maxY, n.y + NODE_HEIGHT);
+            const f = nodeFootprint(n);
+            minX = Math.min(minX, f.x0); minY = Math.min(minY, f.y0);
+            maxX = Math.max(maxX, f.x1); maxY = Math.max(maxY, f.y1);
         });
 
+        // il contorno reale del gruppo (con l'etichetta sopra), non il
+        // rettangolo dei membri: il contorno sporge di un padding, e i colli
+        // fra membri lontani possono girare attorno a chi sta in mezzo
         groups.forEach(g => {
-            const b = getGroupBounds(g, nodes);
-            if (b) {
-                minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
-                maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
-            }
+            const geom = getGroupGeometry(g, nodes);
+            if (!geom) return;
+            const b = geom.bounds;
+            const labelTop = g.showLabel !== false ? (g.labelPos ? g.labelPos.y : geom.top.y - 20) - 18 : b.y0;
+            minX = Math.min(minX, b.x0); minY = Math.min(minY, b.y0, labelTop);
+            maxX = Math.max(maxX, b.x1); maxY = Math.max(maxY, b.y1);
         });
 
         // Le sticky notes fanno parte del contenuto: senza questo venivano
@@ -1220,7 +1332,8 @@ export default function GenogramApp() {
             maxX = Math.max(maxX, sn.x + (sn.width || 0)); maxY = Math.max(maxY, sn.y + (sn.height || 0));
         });
         return { minX, minY, maxX, maxY };
-    }, [nodes, groups, stickyNotes]);
+    };
+    const getContentBounds = useCallback(() => contentBoundsOf(nodes, groups, stickyNotes), [nodes, groups, stickyNotes]);
 
     const getGraphBounds = () => {
         let { minX, minY, maxX, maxY } = getContentBounds();
@@ -1248,10 +1361,12 @@ export default function GenogramApp() {
     };
 
     // Export SVG vettoriale: ideale per tesi/articoli, nessuna perdita di qualità
-    const downloadSVG = () => {
+    const downloadSVG = async () => {
         if (!svgRef.current) return;
         const bounds = getGraphBounds();
         const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
+        inlineTextStyles(svgClone, svgRef.current);
+        svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
         const gElement = svgClone.querySelector('g');
         if (gElement) {
             gElement.setAttribute('transform', '');
@@ -1260,9 +1375,10 @@ export default function GenogramApp() {
         svgClone.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`);
         svgClone.setAttribute('width', `${bounds.w}`);
         svgClone.setAttribute('height', `${bounds.h}`);
-        svgClone.style.fontFamily = 'sans-serif';
 
-        const svgData = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
+        copiaTemaInSvg(svgClone, svgRef.current);
+        await embedFonts(svgClone);
+        const svgData = new XMLSerializer().serializeToString(svgClone);
         const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1278,6 +1394,8 @@ export default function GenogramApp() {
         const scaleFactor = exportScale;
 
         const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
+        inlineTextStyles(svgClone, svgRef.current);
+        svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
         const gElement = svgClone.querySelector('g');
         if (gElement) {
             gElement.setAttribute('transform', '');
@@ -1287,9 +1405,13 @@ export default function GenogramApp() {
         svgClone.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`);
         svgClone.setAttribute('width', `${bounds.w * scaleFactor}`);
         svgClone.setAttribute('height', `${bounds.h * scaleFactor}`);
-        svgClone.style.fontFamily = 'sans-serif';
 
-        const svgData = (copiaTemaInSvg(svgClone, svgRef.current), notaInTestoSvg(svgClone), new XMLSerializer().serializeToString(svgClone));
+        // Un SVG disegnato come immagine non può caricare font esterni: vanno
+        // incorporati, altrimenti il PNG ricade nel carattere di sistema.
+        copiaTemaInSvg(svgClone, svgRef.current);
+        notaInTestoSvg(svgClone);
+        await embedFonts(svgClone);
+        const svgData = new XMLSerializer().serializeToString(svgClone);
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         const img = new Image();
@@ -1300,7 +1422,10 @@ export default function GenogramApp() {
         const now = new Date();
         const fileName = `${metaTitle.replace(/\s+/g, '_')}_${now.toISOString().slice(0, 10)}.${format}`;
 
-        img.onload = () => {
+        img.onload = async () => {
+            // il caricamento dell'immagine non garantisce che i font incorporati
+            // siano già decodificati: senza, il primo disegno può usare il ripiego
+            try { await img.decode(); } catch { /* decode non supportato: si disegna comunque */ }
             canvas.width = bounds.w * scaleFactor;
             canvas.height = bounds.h * scaleFactor;
 
@@ -1351,13 +1476,17 @@ export default function GenogramApp() {
         img.src = url;
     };
 
-    const printVectorPDF = () => {
+    const printVectorPDF = async () => {
+        // la finestra si apre subito, nel gesto dell'utente: dopo un await i
+        // browser la bloccherebbero come popup
         const w = window.open('', '_blank');
         if (w && svgRef.current) {
             const bounds = getGraphBounds();
 
             // Clona l'SVG
             const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
+            inlineTextStyles(svgClone, svgRef.current);
+            svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
 
             // 1. Determina il colore di sfondo attuale
             const bgColor = currentTheme.stile ? currentTheme.colors.bgMain : (darkMode ? '#111827' : '#ffffff'); // gray-900 vs white
@@ -1390,7 +1519,9 @@ export default function GenogramApp() {
             svgClone.style.display = 'block';
             svgClone.style.overflow = 'visible';
 
-            const svgHtml = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
+            copiaTemaInSvg(svgClone, svgRef.current);
+            await embedFonts(svgClone);
+            const svgHtml = new XMLSerializer().serializeToString(svgClone);
 
             w.document.write(`
                 <!DOCTYPE html>
@@ -1523,11 +1654,13 @@ export default function GenogramApp() {
     // --- FUNZIONE STAMPA PDF (CORRETTA E VISIBILE) ---
     // Sostituisci tutto il blocco errato "const printPDF..." con questo:
 
-    const executePrintPDF = (options: ReportOptions) => {
+    const executePrintPDF = async (options: ReportOptions) => {
         const w = window.open('', '_blank');
         if (w && svgRef.current) {
             const bounds = getGraphBounds();
             const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
+            inlineTextStyles(svgClone, svgRef.current);
+            svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
 
             // Reset trasformazioni per la stampa
             const gElement = svgClone.querySelector('g');
@@ -1541,7 +1674,9 @@ export default function GenogramApp() {
             // Altezza fissa per la prima pagina, il resto scorre
             svgClone.setAttribute('height', '50vh');
 
-            const svgHtml = (copiaTemaInSvg(svgClone, svgRef.current), new XMLSerializer().serializeToString(svgClone));
+            copiaTemaInSvg(svgClone, svgRef.current);
+            await embedFonts(svgClone);
+            const svgHtml = new XMLSerializer().serializeToString(svgClone);
 
             // Genera il contenuto testuale usando le opzioni
             const reportHtml = generateReportHTML(nodes, edges, groups, options);
@@ -1812,6 +1947,103 @@ export default function GenogramApp() {
         persistImportedGenograms([copy]);
     };
 
+    // Relazioni che si possono reinstradare con punti intermedi: tutte tranne
+    // coppia, figli e gemelli, che hanno un tracciato convenzionale.
+    const isReroutable = isFreeRelation;
+
+    // Estremi di una relazione come si disegnano: centri delle persone,
+    // perimetro dei gruppi (ancore comprese), barra di coppia per i figli.
+    // Usata dal disegno delle linee e dalle maniglie dei punti intermedi.
+    const endpointsOf = (e: RelationEdge) => {
+        let start = getEntityCenter(e.fromId, nodes, groups);
+        let end = getEntityCenter(e.toId, nodes, groups);
+        if (!start || !end) return null;
+
+        // con punti intermedi l'estremo su un gruppo guarda il punto
+        // intermedio più vicino, non l'altro estremo lontano
+        const wps = e.waypoints && e.waypoints.length ? e.waypoints : null;
+        const refForEnd = wps ? wps[wps.length - 1] : null;
+        const refForStart = wps ? wps[0] : null;
+
+        // 2. Intersezione TARGET
+        const tGroup = groups.find(g => g.id === e.toId);
+        if (tGroup) {
+            const geom = getGroupGeometry(tGroup, nodes);
+            if (geom) {
+                if (e.toAnchor !== undefined) {
+                    // Usa Math Bezier preciso con i punti di controllo
+                    end = getPointOnOrganicPerimeter(geom.controlPoints, e.toAnchor);
+                } else {
+                    // Auto (Closest Point su perimetro approssimato va bene per l'auto)
+                    end = getClosestPointOnPolygon(geom.expandedPoints, refForEnd || start);
+                }
+            }
+        }
+
+        // 3. Intersezione SOURCE
+        const sGroup = groups.find(g => g.id === e.fromId);
+        if (sGroup) {
+            const geom = getGroupGeometry(sGroup, nodes);
+            if (geom) {
+                if (e.fromAnchor !== undefined) {
+                    start = getPointOnOrganicPerimeter(geom.controlPoints, e.fromAnchor);
+                } else {
+                    start = getClosestPointOnPolygon(geom.expandedPoints, refForStart || end);
+                }
+            }
+        }
+
+        // ... Logica Nodi (child/marriage) rimane invariata ...
+        const fNode = nodes.find(n => n.id === e.fromId);
+        const tNode = nodes.find(n => n.id === e.toId);
+        const isTwin = e.type.startsWith('twin');
+        if ((e.type.startsWith('child') || isTwin) && fNode && tNode) {
+            const marriage = findMarriageEdge(e.fromId, edges);
+            if (marriage) {
+                const p1 = nodes.find(n => n.id === marriage.fromId); const p2 = nodes.find(n => n.id === marriage.toId);
+                if (p1 && p2) start = { x: (p1.x + p2.x + NODE_WIDTH) / 2, y: Math.max(p1.y, p2.y) + MARRIAGE_BAR_Y };
+            } else start = { x: fNode.x + NODE_WIDTH / 2, y: fNode.y + NODE_HEIGHT };
+        }
+
+        return { start, end, tNode };
+    };
+
+    // --- CONNETTORI FIGLIO DOPPI ---
+    // Un figlio di una coppia ha DUE archi genitore-figlio, uno per genitore,
+    // ma entrambi partono dalla barra di coppia e arrivano allo stesso punto:
+    // disegnarli tutti e due vuol dire sovrapporre due tratti identici. Finché
+    // sono dello stesso tipo non si nota; se uno è biologico e l'altro è
+    // un'adozione — cioè appena si cambia il tipo da un lato solo — la linea
+    // continua copre quella punteggiata e il simbolo dell'adozione sparisce.
+    // Se ne disegna uno solo, scegliendo il tipo che porta informazione
+    // ('child-bio' è il valore di partenza, qualunque altro vince), e il
+    // click seleziona tutto il gruppo: per chi guarda quella è UNA relazione,
+    // e cambiarne il tipo o cancellarla deve agire su entrambi gli archi.
+    const childConnectors = useMemo(() => {
+        const byKey = new Map<string, string[]>();
+        const nodeIds = new Set(nodes.map(n => n.id));
+        edges.forEach(e => {
+            if (!e.type.startsWith('child')) return;
+            if (!nodeIds.has(e.fromId) || !nodeIds.has(e.toId)) return;
+            const m = findMarriageEdge(e.fromId, edges);
+            const key = `${m ? 'm:' + m.id : 'p:' + e.fromId}|${e.toId}`;
+            byKey.set(key, [...(byKey.get(key) || []), e.id]);
+        });
+        const group = new Map<string, string[]>();   // id rappresentante → archi del gruppo
+        const hidden = new Set<string>();
+        byKey.forEach(ids => {
+            if (ids.length < 2) return;
+            const rep = ids.find(id => edges.find(e => e.id === id)?.type !== 'child-bio') || ids[0];
+            group.set(rep, ids);
+            ids.forEach(id => { if (id !== rep) hidden.add(id); });
+        });
+        return { group, hidden };
+    }, [edges, nodes]);
+
+    // Tutti gli archi che il click su una relazione deve selezionare: da soli,
+    // o insieme al gemello nascosto quando è un connettore di figlio doppio.
+    const edgeGroupOf = (id: string) => childConnectors.group.get(id) || [id];
+
     const selectedNode = selectedNodeIds.length === 1 ? nodes.find(n => n.id === selectedNodeIds[0]) : null;
     const selectedEdge = edges.find(e => e.id === selectedEdgeIds[0]);
     const selectedGroup = groups.find(g => g.id === selectedGroupIds[0]);
@@ -1919,10 +2151,12 @@ export default function GenogramApp() {
                             {/* L'azione principale resta nell'header su mobile: dentro il drawer
                                 sarebbe stata a due tap e nascosta. */}
                             <button onClick={handleNewGenogram} title="Nuovo genogramma" aria-label="Nuovo genogramma"
-                                className="gp-nuovo md:hidden text-white px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-medium shrink-0 shadow-sm"
+                                className="gp-nuovo md:hidden mr-auto text-white px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-medium shrink-0 shadow-sm"
                                 style={{ backgroundColor: 'var(--theme-accent)' }}><Plus size={16} /> Nuovo</button>
-                            <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-[200px] max-w-2xl">
-                                <div className="relative flex-1">
+                            {/* su telefono la ricerca va su una riga sua, a tutta larghezza: prima
+                                andava a capo a metà lasciando sola l'icona dello schermo intero */}
+                            <div className="flex items-center gap-2 md:gap-4 flex-1 basis-full order-last md:basis-auto md:order-none min-w-[200px] max-w-2xl">
+                                <div className="relative flex-1 min-w-0">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 opacity-50" size={18} />
                                     <input
                                         className="gp-cerca w-full pl-10 pr-4 py-2 rounded-lg border theme-border bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 theme-text placeholder-opacity-50 placeholder-current"
@@ -1950,7 +2184,7 @@ export default function GenogramApp() {
                                     const catDef = categories.find(c => c.id === g.category) || categories[categories.length - 1];
                                     const Icon = ICON_MAP[catDef.iconKey] || Tag;
                                     return (
-                                        <div key={g.id} onClick={() => apriNellEditor(g)} className="gp-scheda group relative theme-panel rounded-xl shadow-sm hover:shadow-md transition-all border theme-border cursor-pointer overflow-hidden flex flex-col h-48">
+                                        <div key={g.id} onClick={() => apriNellEditor(g)} role="button" tabIndex={0} aria-label={`Apri ${g.title}`} onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); apriNellEditor(g); } }} className="gp-scheda group relative theme-panel rounded-xl shadow-sm hover:shadow-md transition-all border theme-border cursor-pointer overflow-hidden flex flex-col h-48">
                                             <div className="gp-fascia absolute top-0 left-0 w-1.5 h-full" style={{ backgroundColor: catDef.color }} />
                                             <span className="gp-num" aria-hidden="true">{String(gi + 1).padStart(2, '0')}</span>
                                             <div className="p-5 flex-1 flex flex-col">
@@ -1958,7 +2192,10 @@ export default function GenogramApp() {
                                                     <div className="gp-scheda-cat flex items-center gap-2 text-xs font-bold uppercase tracking-wider" style={{ color: catDef.color, ['--cat' as any]: catDef.color }}>
                                                         <Icon size={12} /> {catDef.label}
                                                     </div>
-                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    {/* azioni al passaggio del mouse; dove il mouse non c'è (telefono,
+                                                        tablet, APK) restano sempre visibili, e con la tastiera
+                                                        compaiono quando la scheda ha il focus */}
+                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
                                                         {pontePossibile() && <button aria-label={`Invia «${g.title}» a PsyDiary`} title="Invia a PsyDiary" onClick={(e) => { e.stopPropagation(); inviaPsy(readFullGenogram(g)); }} className="text-gray-400 hover:text-blue-500"><Send size={16} /></button>}
                                                         <button aria-label="Esporta file" title="Esporta file" onClick={(e) => { e.stopPropagation(); exportSingleGenogram(g); }} className="text-gray-400 hover:text-blue-500"><Download size={16} /></button>
                                                         <button aria-label="Duplica" title="Duplica" onClick={(e) => { e.stopPropagation(); duplicateGenogram(g); }} className="text-gray-400 hover:text-green-600"><Copy size={16} /></button>
@@ -2058,6 +2295,7 @@ export default function GenogramApp() {
 
             {showDesigner && <StyleDesignerModal onClose={() => setShowDesigner(false)} onSave={(p) => setCustomPresets(prev => [...prev, p])} />}
             {showReport && <ReportModal onClose={() => setShowReport(false)} nodes={nodes} edges={edges} groups={groups} />}
+            {showImageImport && <ImageImportModal onClose={() => setShowImageImport(false)} onImport={importFromImage} />}
             {showMinuchin && <MinuchinManager maps={structuralMaps} nodes={nodes} edges={edges} groups={groups} selectedNodeIds={selectedNodeIds} darkMode={darkMode} theme={currentTheme} onChange={setStructuralMaps} onClose={() => setShowMinuchin(false)} onCreatePerson={addPersonFromMap} overlayMapId={overlayMapId} onOverlayChange={setOverlayMapId} />}
             {/* --- INCOLLA QUI IL BLOCCO SPOSTATO --- */}
             {showReportConfig && (
@@ -2074,7 +2312,7 @@ export default function GenogramApp() {
             {showCategoryMenu && <div className="fixed inset-0 z-40" onClick={() => setShowCategoryMenu(false)} />}
 
             {/* --- HEADER --- */}
-            <div className="h-14 border-b flex items-center px-2 md:px-4 justify-between shrink-0 gap-2 relative z-50 overflow-visible theme-panel border-b theme-border">
+            <div className="h-14 border-b flex items-center px-2 md:px-4 justify-between shrink-0 gap-2 relative z-[60] overflow-visible theme-panel border-b theme-border">
 
                 {/* SINISTRA: Titolo e Categorie (Fissi) */}
                 <div className="flex gap-2 md:gap-3 items-center shrink-0">
@@ -2212,7 +2450,9 @@ export default function GenogramApp() {
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
                         <button onClick={autoLayout} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Auto-Layout" title="Auto-Layout"><Network size={18} /></button>
                         <button onClick={autoLayoutCM} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Layout Genogramma (Carter & McGoldrick)" title="Layout Genogramma (Carter & McGoldrick)"><GitBranch size={18} /></button>
+                        <button onClick={evitaSovrapposizioni} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Evita sovrapposizioni" title="Evita sovrapposizioni (fa spazio ai nomi, sposta chi copre qualcuno)"><AlignHorizontalSpaceAround size={18} /></button>
                         <button onClick={() => setShowMinuchin(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Mappe Strutturali (Minuchin)" title="Mappe Strutturali (Minuchin)"><Boxes size={18} /></button>
+                        <button onClick={() => setShowImageImport(true)} className="p-1.5 theme-hover rounded shrink-0" style={{ color: 'var(--theme-accent)' }} aria-label="Importa genogramma da immagine" title="Importa da immagine (foto o scansione)"><ScanLine size={18} /></button>
                         <div className="h-4 w-px bg-gray-300 opacity-30 mx-1 shrink-0" />
 
                         <button onClick={() => alignNodes('h')} className="p-1.5 theme-hover rounded shrink-0" title="Allinea Orizzontale"><AlignJustify size={18} /></button>
@@ -2304,21 +2544,23 @@ export default function GenogramApp() {
                                 {groups.map(g => {
                                     const geom = getGroupGeometry(g, nodes);
                                     if (!geom) return null;
-                                    const { d: pathD, cx } = geom;
+                                    const { d: pathD } = geom;
 
                                     const isSel = selectedGroupIds.includes(g.id);
                                     const gColor = tinta(g.color, (g.color === '#000000' && darkMode) ? '#ffffff' : g.color);
 
-                                    // Label Pos logic
-                                    const labelX = g.labelPos ? g.labelPos.x : cx;
-                                    // Posiziona label sopra il punto più alto del gruppo se non custom
-                                    const labelY = g.labelPos ? g.labelPos.y : (Math.min(...geom.expandedPoints.map(p => p.y)) - 20);
+                                    // Etichetta sopra il punto più alto del contorno: con un gruppo a
+                                    // L il baricentro può cadere fuori dalla forma, e l'etichetta finiva
+                                    // a galleggiare sopra persone che nel gruppo non ci sono.
+                                    const labelX = g.labelPos ? g.labelPos.x : geom.top.x;
+                                    const labelY = g.labelPos ? g.labelPos.y : geom.top.y - 20;
 
                                     return (
                                         <g key={g.id} onClick={(e) => { e.stopPropagation(); setSelectedGroupIds([g.id]); setSelectedNodeIds([]); }}>
                                             <path
                                                 d={pathD}
                                                 fill={gColor}
+                                                fillRule="evenodd"
                                                 fillOpacity={0.05}
                                                 stroke={gColor}
                                                 strokeDasharray="10,5"
@@ -2353,52 +2595,12 @@ export default function GenogramApp() {
 
                                 {/* ARCHI AGGIORNATI (V7 - Bezier Perfect Match) */}
                                 {edges.map(e => {
-                                    let start = getEntityCenter(e.fromId, nodes, groups);
-                                    let end = getEntityCenter(e.toId, nodes, groups);
-                                    if (!start || !end) return null;
-
-                                    // 2. Intersezione TARGET
-                                    const tGroup = groups.find(g => g.id === e.toId);
-                                    if (tGroup) {
-                                        const geom = getGroupGeometry(tGroup, nodes);
-                                        if (geom) {
-                                            if (e.toAnchor !== undefined) {
-                                                // Usa Math Bezier preciso con i punti di controllo
-                                                end = getPointOnOrganicPerimeter(geom.controlPoints, e.toAnchor);
-                                            } else {
-                                                // Auto (Closest Point su perimetro approssimato va bene per l'auto)
-                                                end = getClosestPointOnPolygon(geom.expandedPoints, start);
-                                            }
-                                        }
-                                    }
-
-                                    // 3. Intersezione SOURCE
-                                    const sGroup = groups.find(g => g.id === e.fromId);
-                                    if (sGroup) {
-                                        const geom = getGroupGeometry(sGroup, nodes);
-                                        if (geom) {
-                                            if (e.fromAnchor !== undefined) {
-                                                start = getPointOnOrganicPerimeter(geom.controlPoints, e.fromAnchor);
-                                            } else {
-                                                start = getClosestPointOnPolygon(geom.expandedPoints, end);
-                                            }
-                                        }
-                                    }
-
-                                    // ... Logica Nodi (child/marriage) rimane invariata ...
-                                    const fNode = nodes.find(n => n.id === e.fromId);
-                                    const tNode = nodes.find(n => n.id === e.toId);
-                                    const isTwin = e.type.startsWith('twin');
-                                    if ((e.type.startsWith('child') || isTwin) && fNode && tNode) {
-                                        const marriage = findMarriageEdge(e.fromId, edges);
-                                        if (marriage) {
-                                            const p1 = nodes.find(n => n.id === marriage.fromId); const p2 = nodes.find(n => n.id === marriage.toId);
-                                            if (p1 && p2) start = { x: (p1.x + p2.x + NODE_WIDTH) / 2, y: Math.max(p1.y, p2.y) + MARRIAGE_BAR_Y };
-                                        } else start = { x: fNode.x + NODE_WIDTH / 2, y: fNode.y + NODE_HEIGHT };
-                                    }
-
+                                    const ep = endpointsOf(e);
+                                    if (!ep) return null;
+                                    const { start, end, tNode } = ep;
+                                    if (childConnectors.hidden.has(e.id)) return null;
                                     const customConf = customPresets.find(p => p.id === e.type);
-                                    return <g key={e.id} onClick={(ev) => { ev.stopPropagation(); handleEdgeClick(e.id, ev); }}><ConnectionLine edge={e} start={start} end={end} isSelected={selectedEdgeIds.includes(e.id)} darkMode={darkMode} customConfig={customConf} onAddChild={(ev: any, eid: string) => handleEdgeAction(ev, eid)} isTargetGroup={groups.some(g => g.id === e.toId)} tNode={tNode} /></g>
+                                    return <g key={e.id} data-edge={e.id} onClick={(ev) => { ev.stopPropagation(); handleEdgeClick(edgeGroupOf(e.id), ev); }}><ConnectionLine edge={e} start={start} end={end} isSelected={selectedEdgeIds.includes(e.id)} darkMode={darkMode} customConfig={customConf} onAddChild={(ev: any, eid: string) => handleEdgeAction(ev, eid)} isTargetGroup={groups.some(g => g.id === e.toId)} tNode={tNode} /></g>
                                 })}
 
                                 {/* MANIGLIE ANCORA: relazione selezionata con estremo su un gruppo.
@@ -2409,7 +2611,7 @@ export default function GenogramApp() {
                                     if (!ed) return null;
                                     const acc = currentTheme.colors.accent;
                                     const ends: ('from' | 'to')[] = ['from', 'to'];
-                                    return <g>{ends.map(end => {
+                                    return <g data-ui="1">{ends.map(end => {
                                         const gid = end === 'from' ? ed.fromId : ed.toId;
                                         const g = groups.find(x => x.id === gid);
                                         if (!g) return null;
@@ -2522,6 +2724,59 @@ export default function GenogramApp() {
                                     );
                                 })}
 
+                                {/* PUNTI INTERMEDI della relazione selezionata: un pallino per ogni
+                                    punto (trascina per spostarlo, doppio clic per toglierlo) e un "+"
+                                    a metà di ogni tratto (trascina per piegare lì la linea). Solo per
+                                    relazioni libere: coppia, figli e gemelli hanno un tracciato
+                                    convenzionale. data-ui: non finiscono nelle esportazioni. */}
+                                {selectedEdgeIds.length === 1 && (() => {
+                                    const ed = edges.find(x => x.id === selectedEdgeIds[0]);
+                                    if (!ed || !isReroutable(ed.type)) return null;
+                                    const ep = endpointsOf(ed);
+                                    if (!ep) return null;
+                                    const wps = ed.waypoints || [];
+                                    const pts = [ep.start, ...wps, ep.end];
+                                    const acc = currentTheme.colors.accent;
+                                    const k = 1 / Math.max(zoom, 0.35);   // maniglie di misura costante sullo schermo
+                                    const startDrag = (e: React.PointerEvent, index: number) => {
+                                        e.stopPropagation(); e.preventDefault();
+                                        const { x, y } = getEventCoords(e);
+                                        dragRef.current = { active: true, type: 'edge-waypoint', sourceId: ed.id, waypointIndex: index, startX: x, startY: y, currX: x, currY: y, pointerId: e.pointerId };
+                                        setDragState({ ...dragRef.current });
+                                    };
+                                    return <g data-ui="1">
+                                        {pts.slice(1).map((p, i) => {
+                                            const a = pts[i];
+                                            const m = { x: (a.x + p.x) / 2, y: (a.y + p.y) / 2 };
+                                            if (Math.hypot(p.x - a.x, p.y - a.y) < 50 * k) return null;   // tratto troppo corto per un "+"
+                                            return <g key={'add' + i} transform={`translate(${m.x},${m.y}) scale(${k})`} className="cursor-copy" style={{ touchAction: 'none' }}
+                                                onClick={ev => ev.stopPropagation()}
+                                                onPointerDown={ev => {
+                                                    setEdges(prev => prev.map(x => x.id === ed.id ? { ...x, waypoints: [...wps.slice(0, i), { x: Math.round(m.x), y: Math.round(m.y) }, ...wps.slice(i)] } : x));
+                                                    startDrag(ev, i);
+                                                }}>
+                                                <circle r={11} fill="transparent" />
+                                                <circle r={6.5} fill={currentTheme.colors.bgPanel} stroke={acc} strokeWidth={1.5} opacity={0.9} />
+                                                <path d="M -3 0 H 3 M 0 -3 V 3" stroke={acc} strokeWidth={1.6} strokeLinecap="round" />
+                                                <title>Trascina per piegare la linea qui</title>
+                                            </g>;
+                                        })}
+                                        {wps.map((w, i) => (
+                                            <g key={'wp' + i} transform={`translate(${w.x},${w.y}) scale(${k})`} className="cursor-move" style={{ touchAction: 'none' }}
+                                                onClick={ev => ev.stopPropagation()}
+                                                onPointerDown={ev => startDrag(ev, i)}
+                                                onDoubleClick={ev => {
+                                                    ev.stopPropagation();
+                                                    updateEdges(prev => prev.map(x => x.id === ed.id ? { ...x, waypoints: wps.filter((_, j) => j !== i) } : x));
+                                                }}>
+                                                <circle r={12} fill="transparent" />
+                                                <circle r={7} fill={acc} stroke="white" strokeWidth={2} style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
+                                                <title>Trascina per spostare il punto · doppio clic per toglierlo</title>
+                                            </g>
+                                        ))}
+                                    </g>;
+                                })()}
+
                                 {/* LEGENDA */}
                                 {(() => { if (!showLegend) return null; const b = getContentBounds(); return <Legend x={b.minX - 350} y={b.minY} darkMode={darkMode} nodes={nodes} edges={edges} />; })()}
 
@@ -2538,7 +2793,7 @@ export default function GenogramApp() {
                                     const blobMaxY = Math.max(...geom.expandedPoints.map(p => p.y));
 
                                     return (
-                                        <g key={`handles-${g.id}`}>
+                                        <g key={`handles-${g.id}`} data-ui="1">
                                             {/* 1. Maniglia LINK (Gialla - Sinistra, fuori dal blob) */}
                                             <g transform={`translate(${blobMinX - 18}, ${cy})`}
                                                 className="cursor-crosshair"
@@ -2631,24 +2886,33 @@ export default function GenogramApp() {
                             {selectedNode && (
                                 <div className="space-y-3 animate-in fade-in slide-in-from-right-4 duration-200">
                                     <div className="text-[9px] font-bold uppercase opacity-45">Anagrafica</div>
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border font-bold" value={selectedNode.name} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, name: e.target.value } : n))} placeholder="Nome" />
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.label || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, label: e.target.value } : n))} placeholder="Etichetta (es. Padre)" />
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.profession || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, profession: e.target.value } : n))} placeholder="Professione" />
+                                    <Campo titolo="Nome"><input className="w-full border p-1 rounded bg-transparent theme-border font-bold" value={selectedNode.name} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, name: e.target.value } : n))} placeholder="Nome" /></Campo>
+                                    <Campo titolo="Etichetta"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.label || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, label: e.target.value } : n))} placeholder="es. Padre, Madre" /></Campo>
+                                    <Campo titolo="Professione"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.profession || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, profession: e.target.value } : n))} placeholder="" /></Campo>
                                     <div className="flex gap-2">
-                                        <input type="number" min="1" className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.birthOrder ?? ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthOrder: e.target.value === '' ? undefined : parseInt(e.target.value) } : n))} placeholder="Ordine nascita" title="Ordine di nascita esplicito: usato dal layout C&M quando mancano le date" />
-                                        <input className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.immigrationYear || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, immigrationYear: e.target.value } : n))} placeholder="Anno immigrazione" />
+                                        <Campo titolo="Ordine di nascita" className="w-1/2"><input type="number" min="1" className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthOrder ?? ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthOrder: e.target.value === '' ? undefined : parseInt(e.target.value) } : n))} placeholder="es. 2" title="Ordine di nascita esplicito: usato dal layout C&M quando mancano le date" /></Campo>
+                                        <Campo titolo="Anno immigrazione" className="w-1/2"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.immigrationYear || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, immigrationYear: e.target.value } : n))} placeholder="" /></Campo>
                                     </div>
                                     <div className="flex gap-2">
-                                        <input className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.education || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, education: e.target.value } : n))} placeholder="Titolo di studio" />
-                                        <input className="w-1/2 border p-1 rounded bg-transparent theme-border" value={selectedNode.religion || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, religion: e.target.value } : n))} placeholder="Religione" />
+                                        <Campo titolo="Titolo di studio" className="w-1/2"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.education || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, education: e.target.value } : n))} placeholder="" /></Campo>
+                                        <Campo titolo="Religione" className="w-1/2"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.religion || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, religion: e.target.value } : n))} placeholder="" /></Campo>
                                     </div>
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.ethnicity || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, ethnicity: e.target.value } : n))} placeholder="Etnia / origine culturale" />
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: e.target.value } : n))} placeholder="Nascita (Data, Anno o inserisci direttamente un'Età)" />
+                                    <Campo titolo="Etnia / origine culturale"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.ethnicity || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, ethnicity: e.target.value } : n))} placeholder="" /></Campo>
+                                    <Campo titolo="Nascita"><CampoNascita key={selectedNode.id} className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.birthDate}
+                                        onChange={v => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, birthDate: v } : n))}
+                                        onCommit={v => {
+                                            // un'età digitata diventa l'anno di nascita, così si aggiorna col tempo
+                                            const id = selectedNode.id;
+                                            const conv = ageToBirthYear(v, selectedNode.deceased ? selectedNode.deathDate : undefined);
+                                            if (conv !== v) updateNodes(prev => prev.map(n => n.id === id ? { ...n, birthDate: conv } : n));
+                                        }}
+                                        placeholder="data, anno oppure l'età"
+                                        title="Puoi scrivere una data (12/05/1981), un anno (1981) o direttamente l'età: l'età viene convertita nell'anno di nascita, così resta aggiornata col passare del tempo." /></Campo>
                                     {selectedNode.deceased && (
-                                        <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.deathDate || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, deathDate: e.target.value } : n))} placeholder="Morte (Data o Anno)" />
+                                        <Campo titolo="Morte"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.deathDate || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, deathDate: e.target.value } : n))} placeholder="data o anno" /></Campo>
                                     )}
                                     {selectedNode.deceased && (
-                                        <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.causeOfDeath || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, causeOfDeath: e.target.value } : n))} placeholder="Causa del decesso" />
+                                        <Campo titolo="Causa del decesso"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.causeOfDeath || ''} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, causeOfDeath: e.target.value } : n))} placeholder="" /></Campo>
                                     )}
 
                                     <div className="text-[9px] font-bold uppercase opacity-45 pt-2">Visualizzazione</div>
@@ -2665,13 +2929,13 @@ export default function GenogramApp() {
                                         Età: {selectedNode.deceased && selectedNode.deathDate ? `${calculateAgeAtDeath(selectedNode.birthDate, selectedNode.deathDate)} (al decesso)` : calculateAge(selectedNode.birthDate)}
                                     </div>
 
-                                    <select className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.gender} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, gender: e.target.value as Gender } : n))}>
+                                    <Campo titolo="Genere"><select className="w-full border p-1 rounded bg-transparent theme-border" value={selectedNode.gender} onChange={e => updateNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, gender: e.target.value as Gender } : n))}>
                                         <option value="M" className="text-black">Maschio</option><option value="F" className="text-black">Femmina</option>
                                         <option value="TransWoman" className="text-black">Donna Trans (MTF)</option>
                                         <option value="TransMan" className="text-black">Uomo Trans (FTM)</option>
                                         <option value="NonBinary" className="text-black">Non-Binary/Genderqueer</option>
                                         <option value="Pet" className="text-black">Animale</option><option value="Pregnancy" className="text-black">Gravidanza</option><option value="Miscarriage" className="text-black">Aborto Spontaneo</option><option value="Abortion" className="text-black">Aborto Volontario</option><option value="Stillbirth" className="text-black">Morto alla nascita</option>
-                                    </select>
+                                    </select></Campo>
 
                                     <div className="text-[9px] font-bold uppercase opacity-45 pt-2">Marcatori clinici</div>
                                     <div className="grid grid-cols-2 gap-2">
@@ -2744,15 +3008,27 @@ export default function GenogramApp() {
                                     <label className="text-xs opacity-50 font-bold block">Tipo Relazione</label>
                                     <RelationshipSelector value={selectedEdge.type} darkMode={darkMode} onChange={(t: string) => {
                                         const conf = BASE_REL_CONFIG[t] || {};
-                                        updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, type: t, color: conf.color, lineStyle: conf.lineStyle } : ed));
+                                        updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, type: t, color: conf.color, lineStyle: conf.lineStyle } : ed));
                                     }} className="text-black" />
 
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.label} onChange={e => updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, label: e.target.value } : ed))} placeholder="Etichetta" />
-                                    <input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.startDate || ''} onChange={e => updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, startDate: e.target.value } : ed))} placeholder="Inizio relazione (data o anno)" title="Usata dal layout C&M per ordinare cronologicamente i matrimoni multipli" />
+                                    {isFreeRelation(selectedEdge.type) && (
+                                        <div className="text-[11px] rounded-lg p-2 border theme-border" style={{ color: currentTheme.colors.textMuted }}>
+                                            {(selectedEdge.waypoints?.length || 0) > 0
+                                                ? <div className="flex items-center justify-between gap-2">
+                                                    <span>{selectedEdge.waypoints!.length === 1 ? '1 punto intermedio' : `${selectedEdge.waypoints!.length} punti intermedi`} · doppio clic su un punto per toglierlo</span>
+                                                    <button onClick={() => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, waypoints: undefined } : ed))}
+                                                        className="shrink-0 px-2 py-1 rounded border theme-border theme-hover font-semibold" style={{ color: currentTheme.colors.accent }}>Raddrizza</button>
+                                                </div>
+                                                : <span>Per far girare la linea attorno all'albero, trascina uno dei <b>+</b> che compaiono a metà della linea.</span>}
+                                        </div>
+                                    )}
 
-                                    <NotesPanel notes={selectedEdge.notes} onChange={newNotes => updateEdges(prev => prev.map(ed => ed.id === selectedEdge.id ? { ...ed, notes: newNotes } : ed))} />
+                                    <Campo titolo="Etichetta"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.label} onChange={e => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, label: e.target.value } : ed))} placeholder="" /></Campo>
+                                    <Campo titolo="Inizio relazione"><input className="w-full border p-1 rounded bg-transparent theme-border" value={selectedEdge.startDate || ''} onChange={e => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, startDate: e.target.value } : ed))} placeholder="data o anno" title="Usata dal layout C&M per ordinare cronologicamente i matrimoni multipli" /></Campo>
 
-                                    <button onClick={() => { updateEdges(edges.filter(e => e.id !== selectedEdge.id)); setSelectedEdgeIds([]); }} className="w-full bg-red-100 text-red-600 py-2 rounded text-xs hover:bg-red-200 mt-4 flex items-center justify-center gap-2"><Trash2 size={14} /> Elimina Relazione</button>
+                                    <NotesPanel notes={selectedEdge.notes} onChange={newNotes => updateEdges(prev => prev.map(ed => selectedEdgeIds.includes(ed.id) ? { ...ed, notes: newNotes } : ed))} />
+
+                                    <button onClick={() => { updateEdges(edges.filter(e => !selectedEdgeIds.includes(e.id))); setSelectedEdgeIds([]); }} className="w-full bg-red-100 text-red-600 py-2 rounded text-xs hover:bg-red-200 mt-4 flex items-center justify-center gap-2"><Trash2 size={14} /> Elimina Relazione</button>
                                 </div>
                             )}
 

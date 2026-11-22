@@ -1,7 +1,7 @@
 // Verifica che ogni renderType nuovo/corretto produca il proprio decoratore.
 // Stato iniettato per determinismo. Prereq: dev server su :5199.
 const { chromium } = require('playwright-core');
-const CHROME = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = process.env.CHROME_PATH || '/opt/pw-browsers/chromium';
 let failures = 0;
 const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + ' ' + m); if (!c) failures++; };
 const mkNode = (id, x, y, g) => ({ id, x, y, gender: g, name: id, birthDate: '', deceased: false, indexPerson: false, substanceAbuse: false, mentalIssue: false, physicalIssue: false, recovery: false, gayLesbian: false, notes: [] });

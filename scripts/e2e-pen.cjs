@@ -2,7 +2,7 @@
 // Prerequisiti: dev server su :5199. Uso: NODE_PATH=./node_modules node scripts/e2e-pen.cjs
 const { chromium } = require('playwright-core');
 (async () => {
-    const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+    const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));

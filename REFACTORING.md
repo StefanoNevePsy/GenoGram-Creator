@@ -231,8 +231,108 @@ references) — non usarlo come verifica.
       sparisce alla prima persona.
       Test: scripts/e2e-a11y-list.cjs (16 check).
 
+- [x] **Import da immagine** (`utils/imageImport.ts`, `utils/ocr.ts`,
+      `components/imageImportModal.tsx`): da una foto o una scansione ricostruisce
+      persone, coppie e legami genitore-figlio, e prova a leggere nomi e anni.
+      Funziona su genogrammi stampati e su quelli disegnati a mano.
+
+      Il principio: non si cercano i simboli, si cercano i BUCHI. Ogni persona è
+      un contorno chiuso che racchiude dello sfondo; le linee di relazione non
+      racchiudono nulla. Si riempie lo sfondo dai bordi dell'immagine e quel che
+      resta di non-inchiostro sono gli interni dei simboli. Poi si cancellano i
+      simboli dalla maschera: resta la rete delle linee, e ogni componente
+      connessa tocca un insieme di persone; la disposizione per righe
+      generazionali dice se è una coppia o una discendenza.
+
+      Le cose che non si indovinano e vanno misurate sull'immagine:
+      - lo spessore del tratto (mediana del minimo fra corsa orizzontale e
+        verticale), e quello di OGNI singolo blob: in molti genogrammi le linee
+        di parentela sono molto più marcate delle scritte, e una soglia unica o
+        scarta tutte le etichette o scambia per etichetta i tratteggi;
+      - lo spessore del contorno di OGNI simbolo: w/h del rilevamento sono le
+        misure dell'interno, e lasciare in maschera i fianchi del contorno fa da
+        ponte attorno al simbolo fondendo tre generazioni in una;
+      - la forma, dal profilo radiale (raggio diagonale / assiale: quadrato 1.41,
+        cerchio 1, rombo 0.71), che la croce del deceduto non falsa.
+
+      Per i disegni a mano: soglia locale di Bradley (l'ombra di un lato del
+      foglio è più scura dell'inchiostro dell'altro) e sigillatura delle fughe —
+      si erode lo SFONDO invece di ingrassare l'inchiostro, così un varco di un
+      pixel in un angolo aperto si strozza senza falsare le misure dei simboli.
+
+      Otto combinazioni di parametri provate in automatico; vince quella con più
+      persone di forma netta, collegate e non accavallate (contare le teste
+      premierebbe i parametri che inventano buchi fra una lettera e l'altra).
+
+      Nomi e anni: si legge solo dove la convenzione dice di guardare (anno sopra,
+      nome sotto, età dentro), ritagli ingranditi 4x, con una seconda lettura a
+      fascia dove il riquadro non basta. Motore tesseract.js caricato a richiesta
+      e da file locali (`public/tesseract/`, 5.5 MB) perché funzioni anche senza
+      rete. Senza questo passaggio le persone arrivano come «Persona 1, 2, 3…».
+
+      I tipi di relazione assegnati sono quelli neutri (matrimonio, figlio
+      biologico): dall'immagine si legge CHI è legato a chi, non come.
+      Test: scripts/e2e-image-import.cjs (14 check).
+
+- [x] **Connettore del figlio: stile sulla discesa, non sulla barra**. Il
+      connettore è una L — un tratto lungo la barra dei fratelli, poi la
+      discesa al figlio — e veniva disegnato tutto nello stile della
+      relazione. Due conseguenze: i figli di una stessa coppia si
+      ridipingevano a vicenda il tratto orizzontale (vinceva l'ultimo
+      disegnato), e soprattutto un figlio di coppia ha DUE archi, uno per
+      genitore, che collassano sullo stesso connettore. Finché erano dello
+      stesso tipo non si notava; cambiando il tipo da un lato solo — un
+      genitore biologico e uno adottivo — la linea continua copriva quella
+      punteggiata e il simbolo dell'adozione spariva. Sembrava comparire solo
+      alla selezione perché l'arco selezionato è più spesso di 1px e i punti
+      sbordavano. Ora: barra dei fratelli sempre neutra (è struttura), stile
+      solo sulla discesa, e un connettore solo per figlio, col tipo che porta
+      informazione ('child-bio' è il valore di partenza, qualsiasi altro
+      vince). Il click seleziona entrambi gli archi, così cambiare tipo o
+      cancellare agisce sulla relazione intera e non lascia un arco orfano.
+      Test: scripts/e2e-child-lines.cjs (10 check).
+- [x] **Età digitata → anno di nascita** (`ageToBirthYear`): il campo nascita
+      accetta anche un'età, ma la salvava alla lettera, e "45" avrebbe detto
+      45 per sempre. Ora alla conferma del campo diventa l'anno di nascita, e
+      da lì in poi si aggiorna da sé; per un deceduto il conto parte dall'anno
+      di morte, perché quell'età è l'età al decesso. `extractYear` riconosce
+      la stessa convenzione, così i dati già inseriti per età non finiscono in
+      fondo a ogni ordinamento come nati nell'anno 0.
+      Test: dates.test.ts + scripts/e2e-age-field.cjs (6 check).
+
+- [x] **Contorno dei gruppi** (`utils/groupShape.ts`, `utils/footprint.ts`): curva
+      di livello di un campo invece dell'inviluppo convesso gonfiato dal baricentro.
+      Margine uniforme, file di fratelli come capsule, forme a L che non inglobano
+      estranei, membri lontani legati da un collo che aggira chi sta in mezzo.
+      Test: groupShape.test.ts.
+- [x] **Font del tema nelle esportazioni** (`utils/exportStyle.ts`): stile calcolato
+      scritto sul testo della copia e font incorporati in base64 (un SVG disegnato
+      come immagine non può caricarne di esterni). Tutte e cinque le vie
+      d'esportazione. Test: scripts/e2e-export-fonts.cjs.
+- [x] **Distribuzione senza sovrapposizioni** (`layout/declutter.ts`): spazio ai
+      nomi per riga con i discendenti che seguono, ricentratura delle coppie,
+      satelliti accanto a chi sono collegati (mai dentro un gruppo altrui), note
+      che non coprono persone. Eseguito dal layout C&M e dal pulsante "Evita
+      sovrapposizioni". Test: declutter.test.ts.
+- [x] **Punti intermedi sulle relazioni** (`utils/edgeRoute.ts`): "+" a metà dei
+      tratti per piegare la linea, pallini trascinabili, doppio clic o "Raddrizza"
+      per toglierli. Frecce, simboli centrali e zigzag seguono il percorso; linee
+      doppie e triple ora davvero parallele. Test: edgeRoute.test.ts,
+      scripts/e2e-waypoints.cjs.
+- [x] **Audit UI/UX**: menu di esportazione coperto dal pannello; maniglie della
+      persona sopra nome e croce; riquadri dei nomi misurati sul testo vero;
+      campi del pannello con titolo; inquadratura del disegno all'apertura e dopo
+      i layout (prima usava lo stato vecchio); limiti delle esportazioni col nome
+      intero; azioni delle schede visibili su touch; scheda apribile da tastiera;
+      intestazione della dashboard su telefono; maniglie escluse dalle
+      esportazioni. Test: scripts/e2e-ui-fixes.cjs.
+
 ## Convenzioni
 - Niente import circolari: `config/` e `utils/` non importano mai da `components/`.
 - Tipi puri con `import type` (verbatimModuleSyntax attivo).
 - Lo stato resta in GenogramApp e scende via props/hook dedicati.
 - Nuovi campi su GenNode/RelationEdge sempre opzionali (retrocompatibilità dati).
+- Elementi d'interfaccia disegnati nell'SVG (maniglie, controlli) portano
+  `data-ui="1"`: le esportazioni li tolgono.
+- Gli script e2e usano `/opt/pw-browsers/chromium` (collegamento stabile), non un
+  percorso con la versione.
