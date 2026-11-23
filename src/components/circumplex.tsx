@@ -14,20 +14,21 @@ const ARANCIO = tinta('#d97706');
 const ROSSO_ZONA = tinta('#dc2626');
 
 /** Zona della cella (colonna c = coesione, riga r dall'alto): centro bilanciato, angoli sbilanciati, resto medio. */
-const zonaCella = (c: number, r: number) => {
+const zonaCella = (c: number, r: number, forte: boolean) => {
     const lc = c, lf = 3 - r;   // la riga 0 sta in alto = flessibilità massima
     const estremi = Number(lc === 0 || lc === 3) + Number(lf === 0 || lf === 3);
-    return estremi === 0 ? { fill: VERDE, op: 0.18 } : estremi === 1 ? { fill: ARANCIO, op: 0.14 } : { fill: ROSSO_ZONA, op: 0.16 };
+    // l'icona piccola ha bisogno di tinte più cariche per leggersi su qualunque sfondo
+    return estremi === 0 ? { fill: VERDE, op: forte ? 0.38 : 0.18 } : estremi === 1 ? { fill: ARANCIO, op: forte ? 0.30 : 0.14 } : { fill: ROSSO_ZONA, op: forte ? 0.34 : 0.16 };
 };
 
 /** Griglia 4×4 ritagliata nel cerchio, condivisa da icona e grafico grande. */
-const Griglia = ({ size, pad, colori, spessore }: { size: number; pad: number; colori: CircumplexColori; spessore: number }) => {
+const Griglia = ({ size, pad, colori, spessore, forte = false }: { size: number; pad: number; colori: CircumplexColori; spessore: number; forte?: boolean }) => {
     // useId contiene ':' che dentro url(#...) non è sicuro in tutti i contesti (esportazioni incluse).
     const clipId = 'circ-' + useId().replace(/[^a-zA-Z0-9_-]/g, '');
     const inner = size - 2 * pad, cell = inner / 4, cx = size / 2, cy = size / 2, r = inner / 2;
     const celle = [];
     for (let row = 0; row < 4; row++) for (let col = 0; col < 4; col++) {
-        const z = zonaCella(col, row);
+        const z = zonaCella(col, row, forte);
         celle.push(<rect key={row * 4 + col} x={pad + col * cell} y={pad + row * cell} width={cell} height={cell} fill={z.fill} fillOpacity={z.op} />);
     }
     const linee = [1, 2, 3].flatMap(i => [
@@ -37,17 +38,25 @@ const Griglia = ({ size, pad, colori, spessore }: { size: number; pad: number; c
     return (
         <>
             <defs><clipPath id={clipId}><circle cx={cx} cy={cy} r={r} /></clipPath></defs>
+            {/* disco opaco: sul canvas l'icona non deve dipendere dal colore che ha dietro */}
+            {forte && <circle cx={cx} cy={cy} r={r} fill={colori.sfondo} />}
             <g clipPath={`url(#${clipId})`}>
                 {celle}
-                <g stroke={colori.bordo} strokeWidth={spessore} fill="none">{linee}</g>
+                <g stroke={forte ? colori.testo : colori.bordo} strokeOpacity={forte ? 0.35 : 1} strokeWidth={spessore} fill="none">{linee}</g>
             </g>
-            <circle cx={cx} cy={cy} r={r} fill="none" stroke={colori.tenue} strokeWidth={spessore * 1.5} />
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke={forte ? colori.testo : colori.tenue} strokeWidth={forte ? 1.3 : spessore * 1.5} />
         </>
     );
 };
 
-const Punto = ({ p, r, colori }: { p: { x: number; y: number }; r: number; colori: CircumplexColori }) => (
-    <circle cx={p.x} cy={p.y} r={r} fill={colori.accento} stroke="#ffffff" strokeWidth={1.5} />
+const Punto = ({ p, r, colori, forte = false }: { p: { x: number; y: number }; r: number; colori: CircumplexColori; forte?: boolean }) => (
+    forte ? (
+        // anello di sfondo (stacca dalla tinta) + filo di testo esterno (stacca dal disco)
+        <>
+            <circle cx={p.x} cy={p.y} r={r + 1.6} fill="none" stroke={colori.testo} strokeWidth={0.8} />
+            <circle cx={p.x} cy={p.y} r={r} fill={colori.accento} stroke={colori.sfondo} strokeWidth={1.6} />
+        </>
+    ) : <circle cx={p.x} cy={p.y} r={r} fill={colori.accento} stroke="#ffffff" strokeWidth={1.5} />
 );
 
 /** Icona: solo disegno (<g>), senza <svg> attorno, così sta dentro l'SVG del canvas e finisce nelle esportazioni. x,y è l'angolo in alto a sinistra. */
@@ -58,8 +67,8 @@ export const CircumplexGlyph = ({ valori, x, y, size, colori }: { valori: Circum
     return (
         <g transform={`translate(${x} ${y})`}>
             <title>{descriviCircumplex(valori)}</title>
-            <Griglia size={size} pad={pad} colori={colori} spessore={0.6} />
-            <Punto p={p} r={size * 0.11} colori={colori} />
+            <Griglia size={size} pad={pad} colori={colori} spessore={0.6} forte />
+            <Punto p={p} r={size * 0.11} colori={colori} forte />
         </g>
     );
 };

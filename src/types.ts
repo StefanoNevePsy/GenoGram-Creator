@@ -26,7 +26,9 @@ export interface RelationEdge { id: string; fromId: string; toId: string; type: 
     waypoints?: { x: number, y: number }[]; }
 export interface NodeGroup { id: string; memberIds: string[]; type: 'household' | 'subsystem' | 'circumplex'; label: string; color: string; notes: NoteItem[]; labelPos?: { x: number, y: number }; customPadding?: number; showLabel?: boolean;
     // Valutazione del modello circonflesso di Olson (0–100); `hidden` toglie il gruppo dal disegno senza cancellarlo
-    circumplex?: { cohesion: number; flexibility: number; date?: string }; hidden?: boolean; }
+    circumplex?: { cohesion: number; flexibility: number; date?: string }; hidden?: boolean;
+    // Angolo in alto a sinistra dell'icona del circonflesso (coordinate canvas); assente = posizione automatica
+    glyphPos?: { x: number, y: number }; }
 export interface CustomPreset { id: string; name: string; type: 'relationship'; config: { color: string; lineStyle: string; renderType: string; decorator: string; } }
 export interface GenogramMeta { id: string; title: string; category: string; lastModified: number; data: { nodes: GenNode[]; edges: RelationEdge[]; groups: NodeGroup[]; presets?: CustomPreset[]; stickyNotes?: any[]; structuralMaps?: StructuralMap[]; } }
 // --- AGGIUNGI SOTTO GLI ALTRI INTERFACE ---
