@@ -15,6 +15,7 @@ import type { GenNode, RelationEdge, NodeGroup, Gender, StructuralMap, MinuchinR
 import type { AppTheme } from '../config/themes';
 import { copiaTemaInSvg, notaInTestoSvg } from '../utils/tema';
 import { inlineTextStyles, embedFonts } from '../utils/exportStyle';
+import { anonimizzaSvg, pseudonimi, leggiAnonimo } from '../utils/anonimizza';
 import { generateId } from '../utils/genogram';
 import { extractYear, annoMorte } from '../utils/dates';
 import { getZigZagPath } from '../utils/geometry';
@@ -210,7 +211,7 @@ export const MinuchinOverlay = ({ map, nodes }: { map: StructuralMap, nodes: Gen
 };
 
 // --- SVG STRINGA PER IL REPORT CLINICO (monocromo, autonomo) ---
-export const mapToSvgString = (map: StructuralMap, nodes: GenNode[]): string => {
+export const mapToSvgString = (map: StructuralMap, nodes: GenNode[], pseudo?: Map<string, string>): string => {
     const d = dims(map);
     const isMin = mapStyle(map) === 'minimal';
     const stroke = '#1f2937';
@@ -249,7 +250,7 @@ export const mapToSvgString = (map: StructuralMap, nodes: GenNode[]): string => 
         else if (n.gender === 'M') parts.push(`<rect x="${p.x - half}" y="${p.y - half}" width="${s}" height="${s}" stroke="${stroke}" stroke-width="1.5" fill="white"/>`);
         else parts.push(`<polygon points="${p.x},${p.y - half} ${p.x + half},${p.y} ${p.x},${p.y + half} ${p.x - half},${p.y}" stroke="${stroke}" stroke-width="1.5" fill="white"/>`);
         if (n.deceased) parts.push(`<path d="M ${p.x - half} ${p.y - half} L ${p.x + half} ${p.y + half} M ${p.x + half} ${p.y - half} L ${p.x - half} ${p.y + half}" stroke="${stroke}" stroke-width="1.2"/>`);
-        parts.push(`<text x="${p.x}" y="${p.y + half + 12}" text-anchor="middle" font-size="10" font-weight="600" fill="${stroke}">${(n.name || '').slice(0, 14)}</text>`);
+        parts.push(`<text x="${p.x}" y="${p.y + half + 12}" text-anchor="middle" font-size="10" font-weight="600" fill="${stroke}">${((pseudo ? pseudo.get(n.id) : n.name) || '').slice(0, 14)}</text>`);
     });
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${d.W} ${d.H}" width="${Math.min(d.W, 560)}" style="background:#ffffff;border:1px solid #e5e7eb;border-radius:8px">${parts.join('')}</svg>`;
 };
@@ -430,6 +431,9 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
         if (!svgRef.current) return;
         const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
         inlineTextStyles(clone, svgRef.current);   // prima di togliere qualsiasi nodo: i testi si accoppiano per posizione
+        // nomi anonimi: dopo inlineTextStyles (accoppia per posizione), prima di serializzare
+        const anonimo = leggiAnonimo();
+        if (anonimo) anonimizzaSvg(clone, pseudonimi(nodes), new Map(nodes.map(n => [n.id, n.name])));
         clone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());
         clone.setAttribute('width', String(d.W * 2)); clone.setAttribute('height', String(d.H * 2));
         copiaTemaInSvg(clone, svgRef.current); notaInTestoSvg(clone);
@@ -445,7 +449,9 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
             ctx.drawImage(img, 0, 0, cv.width, cv.height);
             URL.revokeObjectURL(url);
             const a = document.createElement('a');
-            a.href = cv.toDataURL('image/png'); a.download = `${m.label || 'mappa-strutturale'}.png`; a.click();
+            a.href = cv.toDataURL('image/png');
+            // il titolo della mappa è testo libero: se anonimo non finisce nel nome file
+            a.download = `${(!anonimo && m.label) || 'mappa-strutturale'}.png`; a.click();
         };
         img.src = url;
     };
@@ -623,7 +629,7 @@ export const MinuchinEditor = ({ map, nodes, darkMode, theme, onSave, onClose, o
                                     <g transform={`translate(${-d.sym / 2},${-d.sym / 2}) scale(${sc})`}>
                                         <PersonSymbol node={n} darkMode={darkMode} />
                                     </g>
-                                    <text y={d.sym / 2 + 13} textAnchor="middle" fontSize={isMin ? 9.5 : 10.5} fontWeight={600} fill={stroke}>
+                                    <text data-nome={n.id} y={d.sym / 2 + 13} textAnchor="middle" fontSize={isMin ? 9.5 : 10.5} fontWeight={600} fill={stroke}>
                                         {n.name.length > 14 ? n.name.slice(0, 13) + '…' : n.name}
                                     </text>
                                     {n.deceased && annoMorte(n.deathDate) && <text y={d.sym / 2 + (isMin ? 23 : 24)} textAnchor="middle" fontSize={8.5} fontWeight={700} fill={stroke}>† {annoMorte(n.deathDate)}</text>}

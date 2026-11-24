@@ -37,6 +37,7 @@ import { VALORI_INIZIALI, livelloCoesione, livelloFlessibilita, tipoSistema, des
 import type { CircumplexValues } from './utils/circumplex';
 import { nodeFootprint } from './utils/footprint';
 import { inlineTextStyles, embedFonts } from './utils/exportStyle';
+import { anonimizzaSvg, pseudonimi, testoLiberoVisibile, CHIAVE_ANONIMO, leggiAnonimo } from './utils/anonimizza';
 import { getEntityCenter, getClosestPointOnPolygon, getPointOnOrganicPerimeter, getGroupGeometry, getZigZagPath } from './utils/geometry';
 import { Legend, RelationshipSelector, ConnectionLine, isFreeRelation, NodeShape, SelectionTransformer, StickyNoteShape } from './components/canvas';
 import { QuickRelMenu, PalettePicker, NotesPanel, ThemeSelector, StickyNotePropertiesPanel, Campo, CampoNascita } from './components/panels';
@@ -466,6 +467,12 @@ export default function GenogramApp() {
     const [quickMenu, setQuickMenu] = useState<{ x: number, y: number, edgeId: string, mode: 'child' | 'spouse' | 'link' | 'parents' } | null>(null);
     const [zoom, setZoom] = useState(1);
     const [exportScale, setExportScale] = useState(4);
+    // "Nomi anonimi": vale per tutti i file esportati, mai per il canvas né per i dati salvati
+    const [exportAnonimo, setExportAnonimo] = useState<boolean>(leggiAnonimo);
+    const impostaAnonimo = (v: boolean) => {
+        setExportAnonimo(v);
+        try { localStorage.setItem(CHIAVE_ANONIMO, String(v)); } catch { /* storage non disponibile: la scelta vale per la sessione */ }
+    };
 
     // --- GESTIONE TASTO INDIETRO (Hardware / Browser) ---
     const latestStateRef = useRef({
@@ -1389,12 +1396,25 @@ export default function GenogramApp() {
         return { x: minX - padding, y: minY - padding, w: (maxX - minX) + padding * 2, h: (maxY - minY) + padding * 2 };
     };
 
+    // --- ESPORTAZIONI ANONIME ---
+    // Gli pseudonimi si calcolano su TUTTE le persone, così "M." è la stessa
+    // persona nel disegno, nel report e nelle mappe. Si applicano alla sola
+    // copia da esportare, dopo inlineTextStyles (che accoppia i testi per posizione).
+    const pseudoExport = exportAnonimo ? pseudonimi(nodes) : undefined;
+    const anonimizzaCopia = (clone: SVGSVGElement) => {
+        if (pseudoExport) anonimizzaSvg(clone, pseudoExport, new Map(nodes.map(n => [n.id, n.name])));
+    };
+    // il titolo del genogramma contiene spesso il cognome della famiglia
+    const titoloExport = (anonimo: string, normale: string) => exportAnonimo ? anonimo : normale;
+    const restaVisibile = exportAnonimo ? testoLiberoVisibile({ nodes, edges, groups, stickyNotes }) : [];
+
     // Export SVG vettoriale: ideale per tesi/articoli, nessuna perdita di qualità
     const downloadSVG = async () => {
         if (!svgRef.current) return;
         const bounds = getGraphBounds();
         const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
         inlineTextStyles(svgClone, svgRef.current);
+        anonimizzaCopia(svgClone);
         svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
         const gElement = svgClone.querySelector('g');
         if (gElement) {
@@ -1412,7 +1432,7 @@ export default function GenogramApp() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${metaTitle || 'genogramma'}.svg`;
+        a.download = `${titoloExport('genogramma', metaTitle || 'genogramma')}.svg`;
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -1424,6 +1444,7 @@ export default function GenogramApp() {
 
         const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
         inlineTextStyles(svgClone, svgRef.current);
+        anonimizzaCopia(svgClone);
         svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
         const gElement = svgClone.querySelector('g');
         if (gElement) {
@@ -1449,7 +1470,7 @@ export default function GenogramApp() {
 
         // Nome file
         const now = new Date();
-        const fileName = `${metaTitle.replace(/\s+/g, '_')}_${now.toISOString().slice(0, 10)}.${format}`;
+        const fileName = `${titoloExport('genogramma', metaTitle.replace(/\s+/g, '_'))}_${now.toISOString().slice(0, 10)}.${format}`;
 
         img.onload = async () => {
             // il caricamento dell'immagine non garantisce che i font incorporati
@@ -1477,7 +1498,7 @@ export default function GenogramApp() {
                             if (navigator.canShare({ files: [file] })) {
                                 await navigator.share({
                                     files: [file],
-                                    title: metaTitle,
+                                    title: titoloExport('Genogramma', metaTitle),
                                     text: 'Esportazione Genogramma'
                                 });
                                 URL.revokeObjectURL(url);
@@ -1515,6 +1536,7 @@ export default function GenogramApp() {
             // Clona l'SVG
             const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
             inlineTextStyles(svgClone, svgRef.current);
+            anonimizzaCopia(svgClone);
             svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
 
             // 1. Determina il colore di sfondo attuale
@@ -1556,7 +1578,7 @@ export default function GenogramApp() {
                 <!DOCTYPE html>
                 <html>
                 <head>
-                    <title>${metaTitle} - Vettoriale</title>
+                    <title>${titoloExport('Genogramma', metaTitle)} - Vettoriale</title>
                     <style>
                         @page { 
                             size: ${bounds.w}px ${bounds.h}px; 
@@ -1689,6 +1711,7 @@ export default function GenogramApp() {
             const bounds = getGraphBounds();
             const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
             inlineTextStyles(svgClone, svgRef.current);
+            anonimizzaCopia(svgClone);
             svgClone.querySelectorAll('[data-ui="1"]').forEach(el => el.remove());   // maniglie e controlli: non fanno parte del disegno
 
             // Reset trasformazioni per la stampa
@@ -1708,7 +1731,10 @@ export default function GenogramApp() {
             const svgHtml = new XMLSerializer().serializeToString(svgClone);
 
             // Genera il contenuto testuale usando le opzioni
-            const reportHtml = generateReportHTML(nodes, edges, groups, options);
+            // report su una copia con i nomi sostituiti: relazioni, figli, partner e membri
+            // di Olson li leggono tutti da qui
+            const nodesExport = pseudoExport ? nodes.map(n => ({ ...n, name: pseudoExport.get(n.id) ?? n.name })) : nodes;
+            const reportHtml = generateReportHTML(nodesExport, edges, groups, options);
             // Il circonflesso valuta il SISTEMA, non le singole persone: una sezione
             // sola, con i membri, invece della stessa riga ripetuta nella scheda di
             // ciascuno. Ci sono anche i gruppi nascosti nel disegno: nasconderli
@@ -1716,14 +1742,14 @@ export default function GenogramApp() {
             const olsonGroups = groups.filter(g => g.type === 'circumplex');
             const olsonHtml = (options.showGroups && olsonGroups.length > 0)
                 ? `<h2 style="margin-top:24px">Circonflesso di Olson</h2>` + olsonGroups.map(g => {
-                    const membri = nodes.filter(n => g.memberIds.includes(n.id)).map(n => n.name || 'Senza nome').join(', ');
+                    const membri = nodesExport.filter(n => g.memberIds.includes(n.id)).map(n => n.name || 'Senza nome').join(', ');
                     const data = g.circumplex?.date ? ` <span style="color:#666">(valutazione del ${g.circumplex.date})</span>` : '';
                     return `<div class="person-card"><h3>${g.label}${data}</h3><p>${descriviCircumplex(g.circumplex ?? VALORI_INIZIALI)}</p><p style="color:#666">Membri: ${membri}</p></div>`;
                 }).join('')
                 : '';
             const mapsHtml = (options.showMaps && structuralMaps.length > 0)
                 ? `<h2 style="margin-top:24px">Mappe Strutturali (Minuchin)</h2>` + structuralMaps.map(mp =>
-                    `<div class="person-card"><h3>${mp.label}</h3>${mapToSvgString(mp, nodes)}</div>`).join('')
+                    `<div class="person-card"><h3>${mp.label}</h3>${mapToSvgString(mp, nodes, pseudoExport)}</div>`).join('')
                 : '';
 
             // Genera Legenda (Recuperata dai dati attuali)
@@ -1783,7 +1809,7 @@ export default function GenogramApp() {
             w.document.write(`
               <html>
               <head>
-                  <title>${metaTitle} - Report</title>
+                  <title>${titoloExport('Genogramma', metaTitle)} - Report</title>
                   <style>
                       body { font-family: 'Segoe UI', sans-serif; padding: 40px; color: #333; max-width: 1000px; margin: 0 auto; background: white; }
                       h1 { border-bottom: 2px solid #3b82f6; padding-bottom: 10px; margin-bottom: 20px; color: #111; }
@@ -1798,7 +1824,7 @@ export default function GenogramApp() {
                   </style>
               </head>
               <body>
-                  <h1>${metaTitle}</h1>
+                  <h1>${titoloExport('Genogramma', metaTitle)}</h1>
                   <p style="color:#666; font-size:0.9em">Generato il ${new Date().toLocaleDateString()}</p>
                   
                   <div class="diagram-container">
@@ -2470,6 +2496,18 @@ export default function GenogramApp() {
                                     <div className="w-px h-4 bg-gray-300 opacity-30 mx-0.5"></div>
                                     <div className="relative group/input"><input type="number" min="1" max="12" value={exportScale} onClick={(e) => e.stopPropagation()} onChange={(e) => { const val = parseInt(e.target.value); if (!isNaN(val)) setExportScale(Math.max(1, Math.min(12, val))); }} className="w-10 text-[10px] py-1 rounded border-none bg-transparent text-center outline-none font-bold text-[var(--theme-accent)]" placeholder="#" /></div>
                                 </div>
+                            </div>
+
+                            <div className="mb-3 pb-3 border-b theme-border">
+                                <div className="text-[10px] uppercase font-bold opacity-50 mb-2">Privacy</div>
+                                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                                    <input type="checkbox" checked={exportAnonimo} onChange={e => impostaAnonimo(e.target.checked)} />
+                                    Nomi anonimi (iniziali)
+                                </label>
+                                <div className="text-[10px] opacity-60 mt-1">Solo nei file esportati: il genogramma non cambia.</div>
+                                {exportAnonimo && restaVisibile.length > 0 && (
+                                    <div className="text-[10px] mt-1 text-amber-600">Restano visibili: {restaVisibile.join(', ')}</div>
+                                )}
                             </div>
 
                             <div className="text-[10px] uppercase font-bold opacity-50 mb-1 px-2">Immagini</div>
