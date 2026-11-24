@@ -793,7 +793,7 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
 
     // FIX ALLINEAMENTO TESTO
     // Centriamo il testo verticalmente nel rect usando dominantBaseline="middle"
-    const TextLabel = ({ y, text, size, bold }: { y: number, text: string, size: number, bold?: boolean }) => {
+    const TextLabel = ({ y, text, size, bold, nome }: { y: number, text: string, size: number, bold?: boolean, nome?: string }) => {
         if (!text) return null;
         // Larghezza stimata per il primo disegno; poi si misura il testo vero
         // (vedi useFitLabel): la stima a 0.65·corpo è larga, e il riquadro
@@ -810,6 +810,7 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
                 {/* Il testo è centrato verticalmente su Y */}
                 <text
                     ref={textRef}
+                    data-nome={nome}   // segna il nome della persona: le esportazioni anonime lo cercano nella copia
                     x={w / 2}
                     y={y}
                     dominantBaseline="middle"
@@ -845,7 +846,7 @@ export const NodeShape = ({ node, isSelected, showLabelType, darkMode, onHandleD
                     />
                 </foreignObject>
             ) : (
-                <TextLabel y={-10} text={node.name} size={11} bold />
+                <TextLabel y={-10} text={node.name} size={11} bold nome={node.id} />
             )}
 
             {/* Testo (Età, Data, Anno) posizionato all'interno del simbolo! */}
